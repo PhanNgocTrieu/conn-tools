@@ -13,6 +13,7 @@ using namespace ctt;
 int main(int argc, char** argv) {
     std::signal(SIGPIPE, SIG_IGN);
     if (argc >= 2 && std::string(argv[1]) == "i2c") return run_i2c_command(argc, argv);
+    if (argc >= 2 && std::string(argv[1]) == "storage") return run_storage_command(argc, argv);
 
     AgentOptions o;
     std::string err;

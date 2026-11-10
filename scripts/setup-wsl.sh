@@ -115,6 +115,18 @@ elif [[ $MODE == install ]] && getent group bluetooth >/dev/null; then
     sudo usermod -aG bluetooth "$USER" && note "added $USER to 'bluetooth' (re-login needed)"
 fi
 
+hdr "USB (usbdevfs access for the CTT gadget 1d6b:0104)"
+RULE=/etc/udev/rules.d/99-ctt-usb.rules
+if [[ -f $RULE ]]; then
+    pass "udev rule $RULE"
+elif [[ $MODE == install ]]; then
+    echo 'SUBSYSTEM=="usb", ATTR{idVendor}=="1d6b", ATTR{idProduct}=="0104", MODE="0666"' | sudo tee $RULE >/dev/null
+    sudo udevadm control --reload-rules 2>/dev/null || true
+    pass "installed udev rule $RULE"
+else
+    note "no udev rule for the CTT gadget: 'ctt-agent client -t usb' would need root"
+fi
+
 hdr "Python"
 python3 -c 'import yaml' 2>/dev/null && pass "PyYAML available" || fail "PyYAML missing (apt install python3-yaml)"
 

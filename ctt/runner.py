@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from typing import Callable
 
 from ctt.agent import AgentProcess, client_args, server_args
@@ -24,6 +24,9 @@ TRANSPORT_DEFAULTS = {
     # port = PSM; 0 -> agent default (0x1001 BR/EDR, 0x0080 LE)
     "l2cap": {"port": 0, "listen": "/{port}", "target": "{bdaddr}/{psm}"},
     "unix": {"port": 0, "listen": "@ctt-{port}", "target": "{endpoint}", "local_only": True},
+    # server = DUT gadget (FunctionFS, scripts/dut-usb-gadget.sh), client = host (usbdevfs)
+    "usb": {"port": 0, "listen": "/dev/ffs-ctt", "target": "1d6b:0104", "opts": {"udc": "auto"},
+            "server_side": "dut"},
 }
 BT_TRANSPORTS = ("rfcomm", "l2cap")
 ZERO_BDADDR = "00:00:00:00:00:00"
@@ -84,6 +87,9 @@ class TestSpec:
             raise ValueError(f"{self.name}: mode must be one of {MODES}")
         if self.server_side not in ("dut", "host"):
             raise ValueError(f"{self.name}: server_side must be 'dut' or 'host'")
+        need = TRANSPORT_DEFAULTS.get(self.transport, {}).get("server_side")
+        if need and self.server_side != need:
+            raise ValueError(f"{self.name}: transport '{self.transport}' needs server_side={need}")
         unknown = set(self.expect) - set(EXPECT_KEYS)
         if unknown:
             raise ValueError(f"{self.name}: unknown expect key(s): {', '.join(sorted(unknown))}")
@@ -242,6 +248,9 @@ class Runner:
         return wifi.pick(wifi.collect(self.dut, iface), iface)
 
     def run(self, spec: TestSpec) -> TestResult:
+        d = TRANSPORT_DEFAULTS.get(spec.transport, {})
+        if d.get("opts"):
+            spec = replace(spec, transport_opts={**d["opts"], **spec.transport_opts})
         res = TestResult(spec=spec, started_at=time.time())
         t_start = time.monotonic()
         server = client = None

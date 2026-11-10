@@ -16,10 +16,13 @@ add_library(ctt_core STATIC
   src/client.cpp
   src/i2c.cpp
   src/i2c_cmd.cpp
+  src/storage_cmd.cpp
   src/transports/fd_stream.cpp
   src/transports/tcp.cpp
   src/transports/net_common.cpp
   src/transports/udp.cpp
+  src/transports/usb.cpp
+  src/transports/usb_desc.cpp
   src/transports/bt_common.cpp
   src/transports/packet_stream.cpp
   src/transports/rfcomm.cpp

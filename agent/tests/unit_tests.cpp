@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "ctt/byteorder.hpp"
 #include "ctt/crc32.hpp"
 #include "ctt/ctp.hpp"
 #include "ctt/framing.hpp"
@@ -21,6 +22,10 @@
 
 #include "bt_common.hpp"
 #include "ctt/i2c.hpp"
+#include "usb_desc.hpp"
+
+#include <sys/stat.h>
+#include <fstream>
 #include "packet_stream.hpp"
 
 using namespace ctt;
@@ -384,6 +389,65 @@ static void test_i2c_fake() {
     CHECK(threw);  // busy after write
 }
 
+static void test_usb_desc() {
+    auto d = usb::ffs_descriptors();
+    // v2 header (magic, length, flags) + 3 counts + FS 23 + HS 23 + SS 35 bytes
+    CHECK(d.size() == 24 + 23 + 23 + 35);
+    CHECK(get_le32(d.data()) == 3 && get_le32(d.data() + 4) == d.size() && get_le32(d.data() + 8) == 7);
+    CHECK(get_le32(d.data() + 12) == 3 && get_le32(d.data() + 16) == 3 && get_le32(d.data() + 20) == 5);
+    CHECK(d[24] == 9 && d[25] == 4 && d[29] == 0xFF);              // FS interface, vendor class
+    CHECK(d[33] == 7 && d[34] == 5 && d[35] == 0x81 && d[36] == 2); // FS bulk IN
+    CHECK(get_le16(&d[37]) == 64);
+    CHECK(get_le16(&d[24 + 23 + 9 + 4]) == 512);                   // HS max packet
+    CHECK(d[24 + 46 + 9 + 7 + 1] == 0x30);                          // SS companion follows EP
+
+    auto st = usb::ffs_strings("CTT bulk");
+    CHECK(get_le32(st.data()) == 2 && get_le32(st.data() + 4) == st.size());
+    CHECK(get_le16(&st[16]) == 0x0409 && st.back() == 0 && st.size() == 18 + 9);
+
+    // Parse back what a host reads from usbdevfs: device + config descriptors.
+    std::vector<uint8_t> raw = {18, 1, 0, 2, 0, 0, 0, 64, 0x6b, 0x1d, 0x04, 0x01, 0, 1, 1, 2, 3, 1};
+    std::vector<uint8_t> cfg = {9, 2, 0, 0, 2, 1, 0, 0x80, 50,
+                                // interface 0: HID-like with interrupt endpoint (ignored)
+                                9, 4, 0, 0, 1, 3, 0, 0, 0, 7, 5, 0x83, 3, 8, 0, 10,
+                                // interface 1: vendor bulk pair (as our gadget, HS)
+                                9, 4, 1, 0, 2, 0xFF, 0, 0, 1, 7, 5, 0x81, 2, 0x00, 0x02, 0,
+                                7, 5, 0x02, 2, 0x00, 0x02, 0};
+    raw.insert(raw.end(), cfg.begin(), cfg.end());
+    usb::BulkPair bp;
+    CHECK(usb::find_bulk_pair(raw, -1, bp));
+    CHECK(bp.interface == 1 && bp.ep_in == 0x81 && bp.ep_out == 0x02 && bp.mps_in == 512);
+    CHECK(usb::find_bulk_pair(raw, 1, bp));
+    CHECK(!usb::find_bulk_pair(raw, 0, bp));  // interface 0 has no bulk pair
+
+    auto h = usb::parse_host_endpoint("1d6b:0104/1");
+    CHECK(h.vid == 0x1d6b && h.pid == 0x0104 && h.interface == 1 && h.devnode.empty());
+    h = usb::parse_host_endpoint("/dev/bus/usb/1/5");
+    CHECK(h.devnode == "/dev/bus/usb/001/005" && h.interface == -1);
+    bool threw = false;
+    try { usb::parse_host_endpoint("nonsense"); } catch (const std::exception&) { threw = true; }
+    CHECK(threw);
+
+    // sysfs lookup against a fake tree
+    char tmpl[] = "/tmp/ctt-sysfs-XXXXXX";
+    std::string root = mkdtemp(tmpl);
+    auto dev = [&](const std::string& name, const char* vid, const char* pid, int bus, int devn) {
+        std::string d = root + "/" + name;
+        mkdir(d.c_str(), 0755);
+        std::ofstream(d + "/idVendor") << vid << "\n";
+        std::ofstream(d + "/idProduct") << pid << "\n";
+        std::ofstream(d + "/busnum") << bus << "\n";
+        std::ofstream(d + "/devnum") << devn << "\n";
+    };
+    dev("1-2", "1d6b", "0104", 1, 7);
+    dev("2-1", "0bda", "8771", 2, 3);
+    mkdir((root + "/1-2:1.0").c_str(), 0755);  // interface dir: skipped
+    auto found = usb::find_devices(0x1d6b, 0x0104, root);
+    CHECK(found.size() == 1 && found[0].sysname == "1-2" && found[0].devnode() == "/dev/bus/usb/001/007");
+    CHECK(usb::find_devices(0xdead, 0xbeef, root).empty());
+    CHECK(std::system(("rm -rf " + root).c_str()) == 0);
+}
+
 int main() {
     const std::pair<const char*, std::function<void()>> tests[] = {
         {"crc32", test_crc32},
@@ -396,6 +460,7 @@ int main() {
         {"packet_stream", test_packet_stream},
         {"rfcomm_listen", test_rfcomm_listen},
         {"i2c_fake", test_i2c_fake},
+        {"usb_desc", test_usb_desc},
     };
     for (const auto& [name, fn] : tests) {
         int before = g_failed;

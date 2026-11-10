@@ -45,6 +45,7 @@ std::unique_ptr<I2cBus> open_i2c(const std::string& spec);  // dispatches on "fa
 std::vector<uint8_t> parse_hex(const std::string& s);  // "0a0B" / "0x0a0b" / "0a:0b"; throws
 std::string to_hex(const uint8_t* p, size_t n);
 
-int run_i2c_command(int argc, char** argv);  // `ctt-agent i2c ...`
+int run_i2c_command(int argc, char** argv);      // `ctt-agent i2c ...`
+int run_storage_command(int argc, char** argv);  // `ctt-agent storage ...`
 
 }  // namespace ctt

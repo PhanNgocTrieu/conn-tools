@@ -5,7 +5,7 @@ Tool đo throughput, latency và độ toàn vẹn dữ liệu cho USB / WiFi / 
 - `ctt-agent` (C++17): một binary duy nhất, chạy cả trên host (x86_64, WSL) và DUT (aarch64). Hoạt động theo mô hình server/client giống iperf và dùng giao thức chung [CTP](docs/ctp-spec.md).
 - `ctt` (Python): CLI điều phối. Deploy agent lên DUT qua SSH, chạy hai phía, áp tiêu chí pass/fail và xuất report JSON/CSV.
 
-Kế hoạch tổng thể: [docs/PLAN.md](docs/PLAN.md) · **Hướng dẫn test: [docs/TESTING.md](docs/TESTING.md)** · Cài môi trường: [docs/wsl-setup.md](docs/wsl-setup.md) · Bluetooth: [docs/bluetooth.md](docs/bluetooth.md)
+Kế hoạch tổng thể: [docs/PLAN.md](docs/PLAN.md) · USB: [docs/usb.md](docs/usb.md) · **Hướng dẫn test: [docs/TESTING.md](docs/TESTING.md)** · Cài môi trường: [docs/wsl-setup.md](docs/wsl-setup.md) · Bluetooth: [docs/bluetooth.md](docs/bluetooth.md)
 
 ## Bắt đầu nhanh
 
@@ -44,6 +44,7 @@ python3 -m ctt bt pair-stress --dut-accept -n 50 --connect  # độ ổn định
 | `udp` | WiFi/Ethernet: mất gói thật, jitter (luôn đặt `-r`) | `host:port` |
 | `rfcomm` | Bluetooth Classic (SPP) | `BDADDR/CHANNEL` (server: channel 0 = tự cấp) |
 | `l2cap` | BT L2CAP CoC, BR/EDR hoặc LE (`-o type=le`) | `BDADDR/PSM` |
+| `usb` | USB bulk: server = DUT gadget (FunctionFS), client = PC (usbdevfs) | `VID:PID` (mặc định 1d6b:0104) |
 | `unix` | test/CI không cần radio (`-o type=seqpacket -o mtu=` giả lập L2CAP) | `@name` |
 
 ## Các mode
@@ -103,4 +104,4 @@ tests/      Python tests (python3 -m unittest discover -s tests), fakes/ (blueto
 | Bluetooth RFCOMM / L2CAP + pairing (`ctt bt`) | ✅ Phase 2 (đã test không cần radio; chờ test với dongle + DUT) |
 | MFi Auth CP (I2C) — `ctt mfi` | ✅ Phase 3 (đã test với bus giả lập; chờ register map + board) |
 | WiFi UDP (loss/jitter) + link info (`--wifi`) | ✅ Phase 4 |
-| USB bulk (gadget / libusb) | ⏳ Phase 5 |
+| USB bulk (gadget/usbdevfs) + USB storage (`ctt usb`) | ✅ Phase 5 (unit test + storage đã test; gadget chờ board) |

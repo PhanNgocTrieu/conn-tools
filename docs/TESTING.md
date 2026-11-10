@@ -1,7 +1,7 @@
 # Hướng dẫn test — Connectivity Test Tool (CTT)
 
 > DUT: **Vendor board**, Linux build bằng Yocto. Host: Windows + WSL2 (Ubuntu 24.04).
-> Áp dụng cho CTT v0.1 (Phase 0–4). Test USB sẽ được bổ sung khi tool hỗ trợ.
+> Áp dụng cho CTT v0.1 (Phase 0–6).
 
 Tài liệu gồm 3 cấp test, chạy theo thứ tự:
 
@@ -9,7 +9,7 @@ Tài liệu gồm 3 cấp test, chạy theo thứ tự:
 |---|---|---|
 | **A. Tự kiểm tra tool** | Chắc chắn tool chạy đúng trước khi đo thiết bị | Không |
 | **B. Bring-up DUT** | Host kết nối được tới DUT, agent chạy được trên DUT | DUT + mạng |
-| **C. Test tính năng** | Đo WiFi / Bluetooth / MFi (sau này thêm USB) | DUT + dongle |
+| **C. Test tính năng** | Đo WiFi / Bluetooth / MFi / USB | DUT + dongle / cáp USB |
 
 Mỗi test case có mã (`WIFI-03`, `BT-05`, ...) để ghi vào báo cáo hoặc bug tracker.
 
@@ -205,9 +205,21 @@ Tìm bus và địa chỉ: xem mục `i2c` trong `ctt dut-info`. Có thể chạ
 - Test ở 100 kHz và 400 kHz: tốc độ bus do device tree của board quyết định. Muốn test cả hai thì đổi DT, rồi chạy lại MFI-ALL và so sánh.
 - Chạy tay trên DUT: `ctt-agent i2c --help`.
 
-## C4. USB — ⏳ Phase 5
+## C4. USB
 
-Phạm vi test phụ thuộc vào vai trò cổng USB của board (host, device/OTG hay cả hai). Kiểm tra mục `usb` trong output của `ctt dut-info`.
+Xem [usb.md](usb.md) để biết chi tiết. Trước hết cần xác định vai trò cổng USB: `ctt usb gadget status --dut $CTT_DUT`.
+
+| ID | Mục đích | Lệnh | Pass khi |
+|---|---|---|---|
+| **USB-01** | Vai trò cổng và các UDC | `ctt usb gadget status` | Biết được cổng là host, device hay OTG |
+| **USB-02** | Dựng gadget (nếu là device) | `ctt usb gadget up`, rồi attach `1d6b:0104` vào WSL bằng usbipd | `ctt usb list --side host` thấy `1d6b:0104` |
+| **USB-03** | Bulk host → DUT / DUT → host | `ctt run -t usb -m tx -d 20s` và `-m rx` | Đạt ngưỡng, lost = 0, crc = 0. `link.usb_speed` đúng (high / super) |
+| **USB-04** | Bulk 2 chiều, RTT, block size | `ctt profile profiles/usb_bulk.yaml` | Mọi test PASS |
+| **USB-05** | Mạng qua USB (NCM) | `ctt usb gadget up --ncm`, rồi `ctt run -t tcp -e <ip-usb0>:5201 -m bidir` | PASS |
+| **USB-06** | Thiết bị cắm vào DUT (nếu là host) | `ctt usb list` | Thấy thiết bị với tốc độ đúng (480M / 5000M) |
+| **USB-07** | Throughput USB storage | `ctt usb storage --path <mount>/ctt.bin --size 512M --expect write_MBps_min=X --expect read_MBps_min=Y` | Đạt ngưỡng, `verify_errors` = 0 |
+
+> Throughput USB đo qua WSL bị giới hạn bởi usbipd. Dùng số đo đó để test chức năng; số sign-off cần đo bằng PC Linux native.
 
 ---
 

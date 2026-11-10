@@ -400,6 +400,66 @@ def _add_bt_parser(sub) -> None:
             _add_out_args(p)
 
 
+def cmd_usb(args) -> int:
+    from ctt import usb
+    act = args.usb_cmd
+    if act == "gadget":
+        dut = make_executor(args.dut, args.ssh_port, args.ssh_opt)
+        r = usb.gadget(dut, args.action, ncm=args.ncm)
+        print((r.stdout + r.stderr).strip())
+        return r.returncode
+    if act == "list":
+        ex = LocalExecutor() if args.side == "host" else make_executor(args.dut, args.ssh_port,
+                                                                       args.ssh_opt)
+        devs = [d for d in usb.list_devices(ex) if args.all or not d["root_hub"]]
+        for d in devs:
+            sp = f"{d['speed_mbps']:g}M" if d["speed_mbps"] else "?"
+            print(f"{d['port']:<10} {d['id']}  {sp:>6}  {d['manufacturer']} {d['product']}".rstrip())
+        if not devs:
+            print("(no USB devices)")
+        return 0
+    # storage
+    dut = make_executor(args.dut, args.ssh_port, args.ssh_opt)
+    agent = (args.dut_agent or args.host_agent or find_host_agent()) if isinstance(dut, LocalExecutor) \
+        else (args.dut_agent or DEFAULT_DUT_AGENT)
+    print(f"storage test {args.path} ({args.size}, block {args.block}) on {dut.name} ...")
+    ev = usb.storage(dut, agent, args.path, args.size, args.block, direct=not args.no_direct)
+    expect = {k: float(v) for k, v in _kv(args.expect, "--expect").items()}
+    checks = []
+    for key, val in expect.items():
+        if not key.endswith("_min"):
+            raise SystemExit(f"ctt usb storage: unknown expect key {key} (write_MBps_min, read_MBps_min)")
+        metric = key[:-4]
+        v = ev.get(metric)
+        checks.append({"check": key, "value": v, "op": ">=", "limit": val,
+                       "ok": v is not None and v >= val})
+    if ev.get("event") == "error":
+        verdict, error = "ERROR", ev.get("message")
+    else:
+        ok = bool(ev.get("ok")) and all(c["ok"] for c in checks)
+        verdict, error = ("PASS" if ok else "FAIL"), ("" if ev.get("ok") else "data verification failed")
+    for k in ("write_MBps", "read_MBps"):
+        if k in ev:
+            print(f"  {k[:-5]:<6} {ev[k]:9.2f} MB/s ({ev[k] * 8:8.1f} Mbit/s)"
+                  f"{'' if ev.get(k[:-5] + '_direct') else '  [buffered]'}")
+    if "verify_errors" in ev:
+        print(f"  verify errors: {ev['verify_errors']}")
+    for c in checks:
+        if not c["ok"]:
+            print(f"  check {c['check']}: {c['value']} not >= {c['limit']}")
+    if error:
+        print(f"  error: {error}")
+    print(f"  => {color(verdict, VERDICT_COLOR[verdict])}")
+    report = ReportWriter(args.out, "usb-storage")
+    row = {"name": f"storage {args.path}", "transport": "storage", "mode": "rw", "verdict": verdict,
+           **{k: ev.get(k) for k in ("write_MBps", "read_MBps", "verify_errors") if k in ev},
+           "error": error or ""}
+    report.add_record("storage", row, {"result": ev, "checks": checks})
+    report.finish({"run": "usb-storage", "dut": dut.name, "ctt_version": __version__})
+    print(f"report: {report.dir}")
+    return 0 if verdict == "PASS" else 1
+
+
 def cmd_report(args) -> int:
     from ctt.html_report import write_reports
     h, j = write_reports(args.run_dir)
@@ -458,6 +518,31 @@ def build_parser() -> argparse.ArgumentParser:
     i.set_defaults(func=cmd_dut_info)
 
     _add_bt_parser(sub)
+
+    u = sub.add_parser("usb", allow_abbrev=False, help="USB gadget setup, inventory, storage test")
+    usub = u.add_subparsers(dest="usb_cmd", required=True)
+    g = usub.add_parser("gadget", allow_abbrev=False, help="create/remove the CTT gadget on the DUT")
+    g.add_argument("action", choices=("up", "down", "status", "bind"))
+    g.add_argument("--ncm", action="store_true", help="also add an NCM network function (usb0)")
+    _add_dut_args(g)
+    g.set_defaults(func=cmd_usb)
+    lp = usub.add_parser("list", allow_abbrev=False, help="USB devices and negotiated speed")
+    lp.add_argument("--side", choices=("host", "dut"), default="dut")
+    lp.add_argument("--all", action="store_true", help="include root hubs")
+    _add_dut_args(lp)
+    lp.set_defaults(func=cmd_usb)
+    sp = usub.add_parser("storage", allow_abbrev=False,
+                         help="write/read throughput of a file on USB storage (DUT as USB host)")
+    sp.add_argument("--path", required=True,
+                    help="test file on the mounted device, e.g. /run/media/sda1/ctt.bin")
+    sp.add_argument("--size", default="256M")
+    sp.add_argument("--block", default="1M")
+    sp.add_argument("--no-direct", action="store_true", help="buffered I/O instead of O_DIRECT")
+    sp.add_argument("--expect", action="append", default=[], metavar="KEY=VALUE",
+                    help="write_MBps_min=, read_MBps_min=")
+    _add_dut_args(sp)
+    _add_out_args(sp)
+    sp.set_defaults(func=cmd_usb)
 
     rp = sub.add_parser("report", allow_abbrev=False, help="(re)build report.html + junit.xml")
     rp.add_argument("run_dir", help="out/<timestamp>_<name> directory")
