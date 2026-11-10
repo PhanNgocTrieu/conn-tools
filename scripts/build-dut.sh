@@ -3,6 +3,7 @@
 #
 #   scripts/build-dut.sh --sdk /opt/<sdk>/environment-setup-<target>   # Yocto SDK (preferred)
 #   scripts/build-dut.sh --generic [--static]                           # Ubuntu cross gcc
+#   add --strip to strip symbols (smaller binary for the DUT)
 #
 # Yocto SDK: produced by `bitbake <image> -c populate_sdk`; the binary then
 # links against exactly the DUT's glibc/libstdc++.
@@ -14,12 +15,14 @@ BUILD="$ROOT/build/dut"
 SDK_ENV=""
 GENERIC=0
 STATIC=OFF
+STRIP_BIN=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --sdk) SDK_ENV="$2"; shift 2 ;;
         --generic) GENERIC=1; shift ;;
         --static) STATIC=ON; shift ;;
+        --strip) STRIP_BIN=1; shift ;;
         -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 64 ;;
     esac
@@ -47,7 +50,11 @@ fi
 rm -rf "$BUILD"
 cmake -S "$ROOT" -B "$BUILD" "${CMAKE_ARGS[@]}"
 cmake --build "$BUILD" -j"$(nproc)"
+if [[ $STRIP_BIN -eq 1 ]]; then
+    "${STRIP:-aarch64-linux-gnu-strip}" "$BUILD/agent/ctt-agent"
+fi
 file "$BUILD/agent/ctt-agent" 2>/dev/null || true
+ls -l "$BUILD/agent/ctt-agent" | awk '{print "size: " $5 " bytes"}'
 echo
 echo "DUT agent: $BUILD/agent/ctt-agent"
 echo "deploy with: python3 -m ctt deploy --dut root@<dut-ip>"

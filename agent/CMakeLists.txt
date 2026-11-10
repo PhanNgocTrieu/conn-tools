@@ -43,6 +43,7 @@ if(CTT_STATIC)
   target_link_options(ctt-agent PRIVATE -static)
 endif()
 install(TARGETS ctt-agent RUNTIME DESTINATION bin)
+install(PROGRAMS ${CMAKE_SOURCE_DIR}/scripts/dut-usb-gadget.sh DESTINATION bin RENAME ctt-usb-gadget)
 
 if(CTT_BUILD_TESTS)
   add_executable(ctt_unit_tests tests/unit_tests.cpp)

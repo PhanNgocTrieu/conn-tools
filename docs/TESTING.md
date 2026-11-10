@@ -53,8 +53,9 @@ Gắn BT dongle vào WSL (PowerShell trên Windows, lần đầu chạy bằng q
 ```bash
 # Ưu tiên: dùng Yocto SDK của image board (bitbake <image> -c populate_sdk)
 scripts/build-dut.sh --sdk /opt/<board-sdk>/environment-setup-aarch64-...
-# Nếu chưa có SDK: build tĩnh bằng cross gcc của Ubuntu
-scripts/build-dut.sh --generic --static
+# Nếu chưa có SDK: build tĩnh bằng cross gcc của Ubuntu (khoảng 2.3 MB khi --strip)
+scripts/build-dut.sh --generic --static --strip
+# Hoặc đưa vào image: yocto/meta-ctt (khi đó dùng --dut-agent /usr/bin/ctt-agent)
 ```
 
 ### 0.4 Biến môi trường dùng trong tài liệu

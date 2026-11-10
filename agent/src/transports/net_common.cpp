@@ -39,8 +39,15 @@ void resolve(const std::string& ep, bool passive, int socktype, AddrInfo& out) {
     addrinfo hints{};
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = socktype;
-    hints.ai_flags = passive ? AI_PASSIVE : 0;
-    int rc = getaddrinfo(host.empty() ? nullptr : host.c_str(), port.c_str(), &hints, &out.ai);
+    // Numeric addresses first: resolved without NSS, so a statically linked
+    // agent works on any DUT image. Names fall back to the full resolver.
+    hints.ai_flags = (passive ? AI_PASSIVE : 0) | AI_NUMERICHOST | AI_NUMERICSERV;
+    const char* h = host.empty() ? nullptr : host.c_str();
+    int rc = getaddrinfo(h, port.c_str(), &hints, &out.ai);
+    if (rc == EAI_NONAME && h) {
+        hints.ai_flags = passive ? AI_PASSIVE : 0;
+        rc = getaddrinfo(h, port.c_str(), &hints, &out.ai);
+    }
     if (rc != 0) throw std::runtime_error("resolve " + ep + ": " + gai_strerror(rc));
 }
 

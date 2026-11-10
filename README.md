@@ -75,6 +75,12 @@ Mỗi lần chạy tạo thư mục `out/<timestamp>_<tên>/` gồm:
 - `summary.csv`, `summary.json`
 - mỗi test một thư mục con chứa `result.json` (đủ cả hai phía) và `intervals.csv` (time-series theo từng interval)
 
+## Đưa agent vào image Yocto
+
+Layer [yocto/meta-ctt](yocto/meta-ctt/README.md) gồm recipe `ctt-agent` và `packagegroup-ctt` (agent, bluez5, iw, i2c-tools). Khi agent đã nằm sẵn trong image, chạy `ctt ... --dut-agent /usr/bin/ctt-agent` và không cần `ctt deploy`.
+
+Khi chưa có SDK, dùng `scripts/build-dut.sh --generic --static --strip` để tạo một binary aarch64 tĩnh khoảng 2.3 MB. Binary này chạy được trên mọi image glibc của board. Nên dùng IP dạng số cho endpoint, vì phân giải tên miền trong binary tĩnh cần thư viện NSS của image.
+
 ## Dùng agent trực tiếp (không qua Python)
 
 ```bash
@@ -92,6 +98,7 @@ profiles/   YAML test profiles
 configs/    MFi config mẫu (bản thật: *.private.yaml, không commit)
 scripts/    setup-wsl.sh, build-host.sh, build-dut.sh, usbipd-attach.ps1
 cmake/      toolchain files
+yocto/      meta-ctt layer (recipe ctt-agent, packagegroup-ctt)
 docs/       PLAN, TESTING (test cases), CTP spec, WSL setup, bluetooth
 tests/      Python tests (python3 -m unittest discover -s tests), fakes/ (bluetoothctl giả lập)
 ```
@@ -104,4 +111,5 @@ tests/      Python tests (python3 -m unittest discover -s tests), fakes/ (blueto
 | Bluetooth RFCOMM / L2CAP + pairing (`ctt bt`) | ✅ Phase 2 (đã test không cần radio; chờ test với dongle + DUT) |
 | MFi Auth CP (I2C) — `ctt mfi` | ✅ Phase 3 (đã test với bus giả lập; chờ register map + board) |
 | WiFi UDP (loss/jitter) + link info (`--wifi`) | ✅ Phase 4 |
+| Yocto layer `meta-ctt` + bản aarch64 tĩnh | ✅ Phase 7 (đã build aarch64; recipe chờ chạy trong BSP) |
 | USB bulk (gadget/usbdevfs) + USB storage (`ctt usb`) | ✅ Phase 5 (unit test + storage đã test; gadget chờ board) |

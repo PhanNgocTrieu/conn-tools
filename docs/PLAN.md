@@ -1,6 +1,6 @@
 # Connectivity Test Tool (CTT) — Kế hoạch triển khai
 
-> Phiên bản: v0.4 · 2026-11-10 — Phase 0–6 đã code xong (xem mục 5)
+> Phiên bản: v0.4 · 2026-11-10 — Phase 0–7 (Yocto) đã code xong; macOS host chưa làm (xem mục 5)
 > Phạm vi: test USB / WiFi / Bluetooth / MFi trên DUT **Vendor board chạy Linux build bằng Yocto**.
 > Host: Windows → **WSL2 (Ubuntu 24.04)**, sau này là Linux native và macOS. Giao diện: **CLI**.
 
@@ -127,7 +127,7 @@ ctt run mfi-cp --dut 192.168.1.50 --bus 2 --iterations 1000
 | **4. WiFi** ✅ | UDP (rate-limited, đo loss/jitter), so sánh với iperf3, thu thông tin link | Đo được throughput WiFi | 1–2 tuần |
 | **5. USB** ✅ (gadget chờ test trên board) | Theo vai trò DUT: FunctionFS gadget + libusb, hoặc mass storage | Đo được throughput USB | 2–3 tuần |
 | **6. Orchestration** ✅ | Test matrix (sweep size/MTU/buffer), soak test, HTML report, so sánh baseline, JUnit | Chạy suite tự động qua đêm | 2 tuần |
-| **7. Yocto + đa nền tảng** | Layer `meta-ctt` trong image. Port host sang Linux native, rồi macOS (BT host qua IOBluetooth) | Bản phát hành | 2–3 tuần |
+| **7. Yocto + đa nền tảng** ✅ Yocto / ⏳ macOS | Layer `meta-ctt` trong image. Port host sang Linux native, rồi macOS (BT host qua IOBluetooth) | Bản phát hành | 2–3 tuần |
 
 ---
 
