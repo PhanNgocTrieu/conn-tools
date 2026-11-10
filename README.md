@@ -1,0 +1,84 @@
+# CTT — Connectivity Test Tool
+
+Tool đo throughput, latency và độ toàn vẹn dữ liệu cho USB / WiFi / Bluetooth / MFi trên thiết bị embedded (DUT: Vendor board, Yocto Linux).
+
+- `ctt-agent` (C++17): một binary duy nhất, chạy cả trên host (x86_64, WSL) và DUT (aarch64). Hoạt động theo mô hình server/client giống iperf và dùng giao thức chung [CTP](docs/ctp-spec.md).
+- `ctt` (Python): CLI điều phối. Deploy agent lên DUT qua SSH, chạy hai phía, áp tiêu chí pass/fail và xuất report JSON/CSV.
+
+Kế hoạch tổng thể: [docs/PLAN.md](docs/PLAN.md) · Cài môi trường: [docs/wsl-setup.md](docs/wsl-setup.md)
+
+## Bắt đầu nhanh
+
+```bash
+scripts/setup-wsl.sh --install          # lần đầu
+scripts/build-host.sh                   # build và chạy unit test + loopback test
+python3 -m ctt selftest                 # tất cả các mode qua TCP loopback
+```
+
+Chạy với DUT:
+
+```bash
+scripts/build-dut.sh --sdk /opt/<board-sdk>/environment-setup-aarch64-...   # hoặc --generic --static
+python3 -m ctt deploy   --dut root@192.168.1.50
+python3 -m ctt dut-info --dut root@192.168.1.50
+python3 -m ctt run      --dut root@192.168.1.50 -m bidir -d 30s
+python3 -m ctt profile profiles/wifi_tcp_throughput.yaml --dut root@192.168.1.50
+```
+
+Đặt `export CTT_DUT=root@192.168.1.50` để khỏi phải gõ `--dut` mỗi lần.
+
+## Các mode
+
+Mặc định server chạy trên DUT, nên:
+
+| Mode | Hướng | Đo gì |
+|---|---|---|
+| `tx` | host → DUT | throughput upstream, đo ở DUT |
+| `rx` | DUT → host | throughput downstream, đo ở host |
+| `bidir` | cả hai chiều cùng lúc | throughput full-duplex |
+| `echo` | ping-pong | RTT min/avg/p50/p95/p99/max, jitter |
+
+Mọi mode đều kiểm tra `seq` (mất gói, sai thứ tự) và CRC-32 của từng frame (tắt bằng `--no-verify`).
+
+## Tiêu chí pass/fail
+
+Dùng `--expect KEY=VALUE` trên CLI hoặc khối `expect:` trong profile:
+`up_mbps_min`, `down_mbps_min`, `lost_max`, `crc_errors_max` (mặc định 0), `rtt_avg_us_max`, `rtt_p99_us_max`, `rtt_max_us_max`.
+
+`ctt` trả exit code 0 khi mọi test PASS, nên dùng trực tiếp được trong CI.
+
+## Report
+
+Mỗi lần chạy tạo thư mục `out/<timestamp>_<tên>/` gồm:
+- `summary.csv`, `summary.json`
+- mỗi test một thư mục con chứa `result.json` (đủ cả hai phía) và `intervals.csv` (time-series theo từng interval)
+
+## Dùng agent trực tiếp (không qua Python)
+
+```bash
+ctt-agent server                                   # trên DUT
+ctt-agent client -e <dut-ip>:5201 -m bidir -d 10   # trên host
+ctt-agent help
+```
+
+## Cấu trúc thư mục
+
+```
+agent/      C++ agent: CTP, transports, test modes, metrics, tests
+ctt/        Python orchestrator (CLI, SSH, runner, profile, report)
+profiles/   YAML test profiles
+scripts/    setup-wsl.sh, build-host.sh, build-dut.sh, usbipd-attach.ps1
+cmake/      toolchain files
+docs/       PLAN, CTP spec, WSL setup
+tests/      Python tests (python3 -m unittest discover -s tests)
+```
+
+## Trạng thái
+
+| Interface | Trạng thái |
+|---|---|
+| TCP (WiFi/Ethernet/USB-NCM) | ✅ Phase 1 |
+| Bluetooth RFCOMM / L2CAP | ⏳ Phase 2 |
+| MFi Auth CP (I2C) | ⏳ Phase 3 |
+| WiFi UDP + link info | ⏳ Phase 4 |
+| USB bulk (gadget / libusb) | ⏳ Phase 5 |

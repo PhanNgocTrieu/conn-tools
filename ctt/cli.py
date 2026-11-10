@@ -1,0 +1,244 @@
+"""`ctt` command line."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+from pathlib import Path
+
+from ctt import __version__
+from ctt.agent import DEFAULT_DUT_AGENT, REPO_ROOT, find_host_agent
+from ctt.executor import LocalExecutor, SshExecutor, make_executor
+from ctt.report import ReportWriter, print_live_event, print_result, print_summary
+from ctt.runner import MODES, Runner, TestSpec
+
+DUT_INFO_SCRIPT = r"""
+section() { echo; echo "### $1"; }
+section system;     uname -a; cat /etc/os-release 2>/dev/null | head -4; uptime
+section cpu;        grep -m1 -iE 'model name|Hardware|Processor' /proc/cpuinfo; nproc 2>/dev/null
+section memory;     free -m 2>/dev/null || head -3 /proc/meminfo
+section network;    (ip -br addr 2>/dev/null || ifconfig -a) | head -30
+section wifi;       (iw dev 2>/dev/null; for i in $(ls /sys/class/net); do [ -d /sys/class/net/$i/wireless ] && iw dev $i link 2>/dev/null; done) | head -30
+section bluetooth;  (hciconfig -a 2>/dev/null || btmgmt info 2>/dev/null || ls /sys/class/bluetooth) | head -30
+section bt-kernel;  grep -E 'bluetooth|rfcomm|l2cap|btusb|hci_uart' /proc/modules 2>/dev/null; ls /proc/net/rfcomm* 2>/dev/null; (command -v bluetoothd || ls /usr/libexec/bluetooth/bluetoothd) 2>/dev/null
+section usb;        (lsusb 2>/dev/null || ls /sys/bus/usb/devices) | head -30; echo "UDC (device/gadget controllers):"; ls /sys/class/udc 2>/dev/null; for r in /sys/class/usb_role/*/role; do [ -f "$r" ] && echo "$r: $(cat $r)"; done
+section i2c;        ls /dev/i2c-* 2>/dev/null; (command -v i2cdetect >/dev/null && echo 'i2c-tools: present' || echo 'i2c-tools: missing')
+section tools;      for t in iperf3 bluetoothctl btmgmt sdptool rfcomm iw wpa_cli hostapd i2cdetect python3 gdbserver; do printf '%-14s %s\n' $t "$(command -v $t || echo -)"; done
+section ctt-agent;  for p in /tmp/ctt-agent /usr/bin/ctt-agent; do [ -x $p ] && $p version; done
+"""
+
+
+def _add_dut_args(p: argparse.ArgumentParser) -> None:
+    g = p.add_argument_group("DUT connection")
+    g.add_argument("--dut", default=os.environ.get("CTT_DUT", "local"),
+                   help="[user@]host of the DUT reached by SSH, or 'local' to run both sides "
+                        "on this machine (default: $CTT_DUT or local)")
+    g.add_argument("--ssh-port", type=int, default=None)
+    g.add_argument("--ssh-opt", action="append", default=[],
+                   help="extra ssh -o option, repeatable (e.g. StrictHostKeyChecking=no)")
+    g.add_argument("--dut-agent", default=None,
+                   help=f"ctt-agent path on the DUT (default {DEFAULT_DUT_AGENT})")
+    g.add_argument("--host-agent", default=None, help="ctt-agent path on this machine")
+
+
+def _add_test_args(p: argparse.ArgumentParser) -> None:
+    g = p.add_argument_group("test")
+    g.add_argument("-t", "--transport", default="tcp")
+    g.add_argument("-m", "--mode", choices=MODES, default="tx",
+                   help="tx: host->DUT, rx: DUT->host, bidir, echo (latency) - when the "
+                        "server runs on the DUT")
+    g.add_argument("-d", "--duration", default="10s")
+    g.add_argument("-b", "--block", default=None, help="payload per frame, e.g. 990, 64K")
+    g.add_argument("-r", "--rate", default=None, help="sender rate limit, e.g. 2M (bits/s)")
+    g.add_argument("--no-verify", action="store_true", help="disable payload CRC checks")
+    g.add_argument("-n", "--count", type=int, default=None, help="echo: number of round trips")
+    g.add_argument("--echo-interval", type=float, default=None, dest="echo_interval_ms",
+                   help="echo: ms between requests (0 = back-to-back)")
+    g.add_argument("-i", "--interval", default="1s", help="report interval")
+    g.add_argument("--port", type=int, default=5201)
+    g.add_argument("-e", "--endpoint", default=None, help="explicit client target")
+    g.add_argument("--listen", default=None, help="explicit server bind endpoint")
+    g.add_argument("--server-side", choices=("dut", "host"), default="dut",
+                   help="which side runs the agent server (default dut)")
+    g.add_argument("--sndbuf", default=None)
+    g.add_argument("--rcvbuf", default=None)
+    g.add_argument("--nodelay", action="store_true")
+    g.add_argument("-o", "--opt", action="append", default=[], metavar="KEY=VALUE",
+                   help="transport option, repeatable")
+    g.add_argument("--expect", action="append", default=[], metavar="KEY=VALUE",
+                   help="pass criterion, e.g. up_mbps_min=1.5, lost_max=0")
+    g.add_argument("--name", default=None)
+
+
+def _kv(items: list[str], what: str) -> dict:
+    out = {}
+    for it in items:
+        if "=" not in it:
+            raise SystemExit(f"ctt: {what} must be KEY=VALUE, got {it!r}")
+        k, v = it.split("=", 1)
+        out[k] = v
+    return out
+
+
+def _add_out_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--out", default=str(REPO_ROOT / "out"), help="report directory root")
+    p.add_argument("-q", "--quiet", action="store_true", help="no per-interval output")
+
+
+def _make_runner(args) -> tuple[Runner, object]:
+    dut = make_executor(args.dut, args.ssh_port, args.ssh_opt)
+    host = LocalExecutor()
+    host_agent = args.host_agent or find_host_agent()
+    if isinstance(dut, LocalExecutor):
+        dut_agent = args.dut_agent or host_agent
+    else:
+        dut_agent = args.dut_agent or DEFAULT_DUT_AGENT
+    quiet = getattr(args, "quiet", False)
+    runner = Runner(dut, host, dut_agent, host_agent,
+                    on_event=lambda side, ev: print_live_event(side, ev, quiet))
+    return runner, dut
+
+
+def _run_specs(args, run_name: str, specs: list[TestSpec]) -> int:
+    runner, dut = _make_runner(args)
+    report = ReportWriter(args.out, run_name)
+    results = []
+    for i, spec in enumerate(specs, 1):
+        print(f"\n[{i}/{len(specs)}] {spec.name}: {spec.transport} {spec.mode} "
+              f"{spec.duration:g}s (server on {spec.server_side}, DUT={dut.name})")
+        r = runner.run(spec)
+        print_result(r)
+        report.add(r)
+        results.append(r)
+    report.finish({"run": run_name, "dut": dut.name, "ctt_version": __version__})
+    print_summary(results, report.dir)
+    return 0 if all(r.verdict == "PASS" for r in results) else 1
+
+
+# ---- commands -----------------------------------------------------------------
+
+def cmd_run(args) -> int:
+    d = {
+        "name": args.name or f"{args.transport}-{args.mode}",
+        "transport": args.transport, "mode": args.mode, "duration": args.duration,
+        "block": args.block, "rate": args.rate, "verify": not args.no_verify,
+        "count": args.count, "echo_interval_ms": args.echo_interval_ms,
+        "interval": args.interval, "port": args.port, "endpoint": args.endpoint,
+        "listen": args.listen, "server_side": args.server_side, "sndbuf": args.sndbuf,
+        "rcvbuf": args.rcvbuf, "nodelay": args.nodelay,
+        "transport_opts": _kv(args.opt, "--opt"),
+        "expect": {k: float(v) for k, v in _kv(args.expect, "--expect").items()},
+    }
+    spec = TestSpec.from_dict(d)
+    return _run_specs(args, spec.name, [spec])
+
+
+def cmd_profile(args) -> int:
+    from ctt.profile import load_profile
+    overrides = {}
+    if args.duration:
+        overrides["duration"] = args.duration
+    name, specs = load_profile(args.profile, overrides)
+    if args.only:
+        specs = [s for s in specs if any(o in s.name for o in args.only)]
+    if args.list:
+        for s in specs:
+            print(f"{s.name:<40} {s.transport:<8} {s.mode:<6} {s.duration:g}s "
+                  f"block={s.block or 'default'} expect={s.expect or '-'}")
+        return 0
+    return _run_specs(args, name, specs)
+
+
+def cmd_selftest(args) -> int:
+    args.dut = "local"
+    specs = [TestSpec.from_dict({"name": f"selftest-{m}", "mode": m, "duration": args.duration,
+                                 "port": args.port, "interval": 0,
+                                 "expect": {"lost_max": 0}})
+             for m in MODES]
+    return _run_specs(args, "selftest", specs)
+
+
+def cmd_deploy(args) -> int:
+    dut = make_executor(args.dut, args.ssh_port, args.ssh_opt)
+    if not isinstance(dut, SshExecutor):
+        raise SystemExit("ctt deploy: --dut user@host is required")
+    binary = Path(args.binary or REPO_ROOT / "build" / "dut" / "agent" / "ctt-agent")
+    if not binary.is_file():
+        raise SystemExit(f"ctt deploy: {binary} not found - build it with scripts/build-dut.sh")
+    remote = args.dut_agent or DEFAULT_DUT_AGENT
+    print(f"copying {binary} -> {dut.target}:{remote}")
+    dut.put(str(binary), remote + ".new")
+    r = dut.run(f"chmod +x {remote}.new && mv -f {remote}.new {remote} && {remote} version")
+    if r.returncode != 0:
+        print(r.stdout + r.stderr, file=sys.stderr)
+        raise SystemExit("ctt deploy: agent does not run on the DUT (wrong architecture or "
+                         "missing libraries? try a static build: scripts/build-dut.sh --static)")
+    print(r.stdout.strip())
+    return 0
+
+
+def cmd_dut_info(args) -> int:
+    dut = make_executor(args.dut, args.ssh_port, args.ssh_opt)
+    r = dut.run(["sh", "-c", DUT_INFO_SCRIPT], timeout=60)
+    print(r.stdout)
+    if r.returncode != 0 and r.stderr.strip():
+        print(r.stderr, file=sys.stderr)
+    return r.returncode
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="ctt", description="Connectivity Test Tool")
+    p.add_argument("--version", action="version", version=f"ctt {__version__}")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    r = sub.add_parser("run", help="run a single test")
+    _add_dut_args(r)
+    _add_test_args(r)
+    _add_out_args(r)
+    r.set_defaults(func=cmd_run)
+
+    pr = sub.add_parser("profile", help="run a YAML test profile")
+    pr.add_argument("profile")
+    pr.add_argument("--only", action="append", help="run tests whose name contains this")
+    pr.add_argument("--list", action="store_true", help="list expanded tests and exit")
+    pr.add_argument("-d", "--duration", default=None, help="override every test's duration")
+    _add_dut_args(pr)
+    _add_out_args(pr)
+    pr.set_defaults(func=cmd_profile)
+
+    st = sub.add_parser("selftest", help="all modes over TCP loopback on this machine")
+    st.add_argument("-d", "--duration", default="2s")
+    st.add_argument("--port", type=int, default=5299)
+    st.add_argument("--ssh-port", type=int, default=None)
+    st.add_argument("--ssh-opt", action="append", default=[])
+    st.add_argument("--dut-agent", default=None)
+    st.add_argument("--host-agent", default=None)
+    _add_out_args(st)
+    st.set_defaults(func=cmd_selftest)
+
+    d = sub.add_parser("deploy", help="copy ctt-agent to the DUT")
+    d.add_argument("--binary", default=None, help="default: build/dut/agent/ctt-agent")
+    _add_dut_args(d)
+    d.set_defaults(func=cmd_deploy)
+
+    i = sub.add_parser("dut-info", help="inventory of the DUT's connectivity stack")
+    _add_dut_args(i)
+    i.set_defaults(func=cmd_dut_info)
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    try:
+        return args.func(args)
+    except (FileNotFoundError, ValueError, RuntimeError) as e:
+        print(f"ctt: {e}", file=sys.stderr)
+        return 2
+    except KeyboardInterrupt:
+        print("\nctt: interrupted", file=sys.stderr)
+        return 130
+
+
+if __name__ == "__main__":
+    sys.exit(main())

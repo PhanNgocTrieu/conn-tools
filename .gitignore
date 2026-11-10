@@ -1,0 +1,9 @@
+build/
+out/
+compile_commands.json
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+# MFi register maps / Apple NDA material must never be committed
+*.private.yaml

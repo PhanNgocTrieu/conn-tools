@@ -1,0 +1,26 @@
+# TCP smoke test: every mode + a block-size sweep.
+#   local:  ctt profile profiles/tcp_smoke.yaml
+#   DUT:    ctt profile profiles/tcp_smoke.yaml --dut root@192.168.1.50
+name: tcp-smoke
+defaults:
+  transport: tcp
+  duration: 5s
+  expect:
+    lost_max: 0
+    crc_errors_max: 0
+
+tests:
+  - name: up
+    mode: tx                # host -> DUT
+  - name: down
+    mode: rx                # DUT -> host
+  - name: bidir
+    mode: bidir
+  - name: rtt
+    mode: echo
+    echo_interval_ms: 10
+  - name: block-sweep
+    mode: tx
+    duration: 3s
+    matrix:
+      block: [1K, 16K, 128K]

@@ -1,0 +1,239 @@
+"""Runs one test: starts the server side, runs the client side, collects results."""
+
+from __future__ import annotations
+
+import time
+from dataclasses import asdict, dataclass, field
+from typing import Callable
+
+from ctt.agent import AgentProcess, client_args, server_args
+from ctt.executor import Executor, LocalExecutor
+from ctt.units import parse_rate, parse_seconds, parse_size
+
+MODES = ("tx", "rx", "bidir", "echo")
+
+# Default "server" listen endpoint and client target per transport.
+# {addr} = address of the machine running the server, {port} = spec.port
+TRANSPORT_DEFAULTS = {
+    "tcp": {"listen": "0.0.0.0:{port}", "target": "{addr}:{port}"},
+}
+
+
+@dataclass
+class TestSpec:
+    name: str = "test"
+    transport: str = "tcp"
+    mode: str = "tx"
+    duration: float = 10.0
+    block: int | None = None
+    rate: int | None = None          # bits/s
+    verify: bool = True
+    count: int | None = None         # echo
+    echo_interval_ms: float | None = None
+    interval: float = 1.0
+    nodelay: bool = False
+    sndbuf: int | None = None
+    rcvbuf: int | None = None
+    timeout: float | None = None     # agent idle I/O timeout
+    port: int = 5201
+    endpoint: str | None = None      # client target; default derived from transport
+    listen: str | None = None        # server bind; default derived from transport
+    server_side: str = "dut"         # "dut" or "host"
+    transport_opts: dict = field(default_factory=dict)
+    expect: dict = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "TestSpec":
+        d = dict(d)
+        known = set(cls.__dataclass_fields__)
+        unknown = set(d) - known
+        if unknown:
+            raise ValueError(f"unknown test field(s): {', '.join(sorted(unknown))}")
+        if "duration" in d:
+            d["duration"] = parse_seconds(d["duration"])
+        if "interval" in d:
+            d["interval"] = parse_seconds(d["interval"])
+        if d.get("block") is not None:
+            d["block"] = parse_size(d["block"])
+        if d.get("rate") is not None:
+            d["rate"] = parse_rate(d["rate"])
+        for k in ("sndbuf", "rcvbuf"):
+            if d.get(k) is not None:
+                d[k] = parse_size(d[k])
+        spec = cls(**d)
+        spec.validate()
+        return spec
+
+    def validate(self):
+        if self.mode not in MODES:
+            raise ValueError(f"{self.name}: mode must be one of {MODES}")
+        if self.server_side not in ("dut", "host"):
+            raise ValueError(f"{self.name}: server_side must be 'dut' or 'host'")
+        unknown = set(self.expect) - set(EXPECT_KEYS)
+        if unknown:
+            raise ValueError(f"{self.name}: unknown expect key(s): {', '.join(sorted(unknown))}")
+
+
+@dataclass
+class TestResult:
+    spec: TestSpec
+    verdict: str = "ERROR"             # PASS / FAIL / ERROR
+    result: dict | None = None         # client "result" event
+    metrics: dict = field(default_factory=dict)
+    checks: list = field(default_factory=list)
+    intervals: list = field(default_factory=list)   # client + server interval events
+    server_events: list = field(default_factory=list)
+    error: str | None = None
+    started_at: float = 0.0
+    elapsed_s: float = 0.0
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        d["spec"] = asdict(self.spec)
+        return d
+
+
+# ---- metrics & pass/fail ----------------------------------------------------
+
+def summarize(result: dict) -> dict:
+    """Flattens a client result into the key metrics used for verdicts/reports."""
+    m: dict = {}
+    for d in ("up", "down"):
+        part = result.get(d)
+        if not part:
+            continue
+        rx = part.get("receiver") or {}
+        tx = part.get("sender") or {}
+        m[f"{d}_mbps"] = rx.get("mbps")
+        m[f"{d}_sender_mbps"] = tx.get("mbps")
+        m[f"{d}_bytes"] = rx.get("bytes")
+        m[f"{d}_lost"] = rx.get("lost", 0)
+        m[f"{d}_crc_errors"] = rx.get("crc_errors", 0)
+    m["lost"] = m.get("up_lost", 0) + m.get("down_lost", 0)
+    m["crc_errors"] = m.get("up_crc_errors", 0) + m.get("down_crc_errors", 0)
+    rtt = result.get("rtt")
+    if rtt:
+        for k in ("count", "min_us", "avg_us", "p50_us", "p95_us", "p99_us", "max_us",
+                  "jitter_us"):
+            if k in rtt:
+                m[f"rtt_{k}"] = rtt[k]
+    link = result.get("link") or {}
+    if "tcp_total_retrans" in link:
+        m["tcp_retrans"] = link["tcp_total_retrans"]
+    return m
+
+
+# expect key -> (metric, comparison)
+EXPECT_KEYS = {
+    "up_mbps_min": ("up_mbps", ">="),
+    "down_mbps_min": ("down_mbps", ">="),
+    "lost_max": ("lost", "<="),
+    "crc_errors_max": ("crc_errors", "<="),
+    "rtt_avg_us_max": ("rtt_avg_us", "<="),
+    "rtt_p99_us_max": ("rtt_p99_us", "<="),
+    "rtt_max_us_max": ("rtt_max_us", "<="),
+}
+
+# Applied to every test unless overridden: data must arrive intact.
+DEFAULT_EXPECT = {"crc_errors_max": 0}
+
+
+def evaluate(metrics: dict, expect: dict) -> list[dict]:
+    checks = []
+    for key, limit in {**DEFAULT_EXPECT, **expect}.items():
+        metric, op = EXPECT_KEYS[key]
+        value = metrics.get(metric)
+        if value is None:
+            ok = False
+        else:
+            ok = value >= float(limit) if op == ">=" else value <= float(limit)
+        checks.append({"check": key, "metric": metric, "op": op, "limit": limit,
+                       "value": value, "ok": ok})
+    return checks
+
+
+# ---- runner -------------------------------------------------------------------
+
+class Runner:
+    def __init__(self, dut: Executor, host: Executor, dut_agent: str, host_agent: str,
+                 on_event: Callable[[str, dict], None] | None = None):
+        self.dut = dut
+        self.host = host
+        self.dut_agent = dut_agent
+        self.host_agent = host_agent
+        self.on_event = on_event or (lambda side, ev: None)
+
+    def _sides(self, spec: TestSpec):
+        if spec.server_side == "dut":
+            return (self.dut, self.dut_agent), (self.host, self.host_agent)
+        return (self.host, self.host_agent), (self.dut, self.dut_agent)
+
+    def _endpoints(self, spec: TestSpec, server_exec: Executor) -> tuple[str | None, str]:
+        defaults = TRANSPORT_DEFAULTS.get(spec.transport, {})
+        listen = spec.listen
+        if listen is None and "listen" in defaults:
+            listen = defaults["listen"].format(port=spec.port)
+        target = spec.endpoint
+        if target is None:
+            if spec.server_side == "host" and not isinstance(self.dut, LocalExecutor):
+                # 127.0.0.1 would point the DUT at itself.
+                raise ValueError(
+                    f"{spec.name}: server runs on the host, so the DUT needs the host's "
+                    "address - set 'endpoint' (e.g. 192.168.1.10:5201)")
+            if "target" not in defaults:
+                raise ValueError(f"{spec.name}: transport '{spec.transport}' needs 'endpoint'")
+            target = defaults["target"].format(addr=server_exec.address, port=spec.port)
+        return listen, target
+
+    def run(self, spec: TestSpec) -> TestResult:
+        res = TestResult(spec=spec, started_at=time.time())
+        t_start = time.monotonic()
+        server = client = None
+        try:
+            (s_exec, s_agent), (c_exec, c_agent) = self._sides(spec)
+            listen, target = self._endpoints(spec, s_exec)
+
+            server = AgentProcess(
+                s_exec.popen(server_args(s_agent, spec, listen, accept_timeout=30)),
+                f"server@{s_exec.name}")
+            ev = server.wait_for("listening", timeout=15)
+            self.on_event("server", ev)
+
+            client = AgentProcess(c_exec.popen(client_args(c_agent, spec, target)),
+                                  f"client@{c_exec.name}")
+            budget = spec.duration + 30 if not spec.count else 600
+            for ev in client.iter_events(timeout=budget):
+                kind = ev.get("event")
+                if kind == "interval":
+                    res.intervals.append({"side": "client", **ev})
+                elif kind == "result":
+                    res.result = ev
+                elif kind == "error":
+                    res.error = ev.get("message")
+                self.on_event("client", ev)
+            rc = client.wait(timeout=10)
+            if res.result is None:
+                raise RuntimeError(res.error or f"client failed (rc={rc}): "
+                                   f"{client.stderr_text()}")
+
+            server.wait(timeout=10)
+            for ev in server.all_events:
+                if ev.get("event") == "interval":
+                    res.intervals.append({"side": "server", **ev})
+                else:
+                    res.server_events.append(ev)
+
+            res.metrics = summarize(res.result)
+            res.checks = evaluate(res.metrics, spec.expect)
+            res.verdict = "PASS" if all(c["ok"] for c in res.checks) else "FAIL"
+        except Exception as e:  # noqa: BLE001 - reported per test
+            res.verdict = "ERROR"
+            res.error = res.error or str(e)
+            if server and server.stderr_lines and server.stderr_text() not in res.error:
+                res.error += f" | server stderr: {server.stderr_text()}"
+        finally:
+            for p in (client, server):
+                if p:
+                    p.kill()
+            res.elapsed_s = time.monotonic() - t_start
+        return res

@@ -1,0 +1,4 @@
+#pragma once
+
+#define CTT_VERSION "@PROJECT_VERSION@"
+#define CTT_ARCH "@CMAKE_SYSTEM_PROCESSOR@"
