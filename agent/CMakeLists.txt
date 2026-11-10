@@ -14,6 +14,8 @@ add_library(ctt_core STATIC
   src/session_common.cpp
   src/server.cpp
   src/client.cpp
+  src/i2c.cpp
+  src/i2c_cmd.cpp
   src/transports/fd_stream.cpp
   src/transports/tcp.cpp
   src/transports/bt_common.cpp

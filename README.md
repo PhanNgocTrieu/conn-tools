@@ -85,6 +85,7 @@ ctt-agent help
 agent/      C++ agent: CTP, transports, test modes, metrics, tests
 ctt/        Python orchestrator (CLI, SSH, runner, profile, report)
 profiles/   YAML test profiles
+configs/    MFi config mẫu (bản thật: *.private.yaml, không commit)
 scripts/    setup-wsl.sh, build-host.sh, build-dut.sh, usbipd-attach.ps1
 cmake/      toolchain files
 docs/       PLAN, TESTING (test cases), CTP spec, WSL setup, bluetooth
@@ -97,6 +98,6 @@ tests/      Python tests (python3 -m unittest discover -s tests), fakes/ (blueto
 |---|---|
 | TCP (WiFi/Ethernet/USB-NCM) | ✅ Phase 1 |
 | Bluetooth RFCOMM / L2CAP + pairing (`ctt bt`) | ✅ Phase 2 (đã test không cần radio; chờ test với dongle + DUT) |
-| MFi Auth CP (I2C) | ⏳ Phase 3 |
+| MFi Auth CP (I2C) — `ctt mfi` | ✅ Phase 3 (đã test với bus giả lập; chờ register map + board) |
 | WiFi UDP + link info | ⏳ Phase 4 |
 | USB bulk (gadget / libusb) | ⏳ Phase 5 |

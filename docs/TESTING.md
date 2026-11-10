@@ -1,7 +1,7 @@
 # Hướng dẫn test — Connectivity Test Tool (CTT)
 
 > DUT: **Vendor board**, Linux build bằng Yocto. Host: Windows + WSL2 (Ubuntu 24.04).
-> Áp dụng cho CTT v0.1 (Phase 0–2). Các test MFi và USB sẽ được bổ sung khi tool hỗ trợ.
+> Áp dụng cho CTT v0.1 (Phase 0–3). Test USB sẽ được bổ sung khi tool hỗ trợ.
 
 Tài liệu gồm 3 cấp test, chạy theo thứ tự:
 
@@ -9,7 +9,7 @@ Tài liệu gồm 3 cấp test, chạy theo thứ tự:
 |---|---|---|
 | **A. Tự kiểm tra tool** | Chắc chắn tool chạy đúng trước khi đo thiết bị | Không |
 | **B. Bring-up DUT** | Host kết nối được tới DUT, agent chạy được trên DUT | DUT + mạng |
-| **C. Test tính năng** | Đo WiFi / Bluetooth (sau này thêm MFi / USB) | DUT + dongle |
+| **C. Test tính năng** | Đo WiFi / Bluetooth / MFi (sau này thêm USB) | DUT + dongle |
 
 Mỗi test case có mã (`WIFI-03`, `BT-05`, ...) để ghi vào báo cáo hoặc bug tracker.
 
@@ -169,19 +169,34 @@ Agent chạy làm server trên DUT. Channel RFCOMM do kernel của DUT tự cấ
 
 ---
 
-## C3. MFi (Auth Coprocessor qua I2C) — ⏳ Phase 3
+## C3. MFi (Auth Coprocessor qua I2C)
 
-Phần này chưa có trong tool. Dưới đây là các test dự kiến, để thống nhất phạm vi:
+Tool không chứa register map của Apple (thuộc NDA). Bạn mô tả các bước đọc/ghi trong một **file config private**, sau đó tool chạy các bước đó trên DUT qua `ctt-agent i2c`. Tool tự retry khi chip NACK (chip ngủ hoặc bận), đo thời gian từng bước, và kiểm tra dữ liệu đọc ra có giống nhau giữa các lần lặp không.
 
-| ID | Nội dung |
-|---|---|
-| MFI-01 | Tìm thấy chip trên bus I2C ở địa chỉ cấu hình (có retry khi chip ngủ và NACK) |
-| MFI-02 | Đọc version / device ID / error register, so với giá trị mong đợi |
-| MFI-03 | Đọc certificate: độ dài đúng, đọc nhiều lần cho kết quả giống nhau |
-| MFI-04 | Challenge/response: tỉ lệ thành công và thời gian xử lý |
-| MFI-05 | Stress N lần đọc, ở 100 kHz và 400 kHz |
+**Chuẩn bị (một lần):**
 
-Cần cung cấp trước: phiên bản chip (2.0C / 3.0), số bus `/dev/i2c-N` và địa chỉ của chip trên board.
+```bash
+cp configs/mfi_cp.example.yaml configs/mfi_cp.private.yaml    # git sẽ bỏ qua file *.private.yaml
+# Sửa: bus (số N của /dev/i2c-N trên board), address (7-bit, theo schematic),
+#      các thanh ghi / độ dài / giá trị mong đợi theo Apple MFi spec của chip (2.0C / 3.0)
+ctt mfi configs/mfi_cp.example.yaml --dut local     # chạy thử với bus giả lập: phải 5/5 PASS
+```
+
+Tìm bus và địa chỉ: xem mục `i2c` trong `ctt dut-info`. Có thể chạy thêm `ssh $CTT_DUT i2cdetect -y -r <N>`, nhưng chip có thể không hiện ra vì nó NACK khi đang ngủ.
+
+| ID | Mục đích | Lệnh | Pass khi |
+|---|---|---|---|
+| **MFI-01** | Chip trả lời trên bus | `ctt mfi configs/mfi_cp.private.yaml --only MFI-01` | 100% probe OK (retries được phép) |
+| **MFI-02** | Version / device ID / protocol | `--only MFI-02` | Giá trị đọc được đúng bằng `EXPECT` |
+| **MFI-03** | Certificate | `--only MFI-03` | Độ dài đúng; mọi lần đọc cho kết quả giống nhau (`stable`) |
+| **MFI-04** | Challenge / response | `--only MFI-04` | Mọi lần thành công; thời gian bước `done` ≤ ngưỡng |
+| **MFI-05** | Stress | `--only MFI-05` (hoặc cả file) | `success_rate` = 1.0 |
+| **MFI-ALL** | Toàn bộ | `ctt mfi configs/mfi_cp.private.yaml` | 5/5 PASS |
+
+- `--repeat-scale 0.1` để chạy nhanh khi đang chỉnh config. Dùng `-q` để ẩn bảng chi tiết của từng bước.
+- Cột `retries` cao là bình thường với Auth CP, vì chip NACK khi đang ngủ hoặc đang xử lý. Chỉ đáng lo khi bước bị **fail**, tức là đã hết số lần retry (tăng `retries` / `retry_delay_ms` trong config).
+- Test ở 100 kHz và 400 kHz: tốc độ bus do device tree của board quyết định. Muốn test cả hai thì đổi DT, rồi chạy lại MFI-ALL và so sánh.
+- Chạy tay trên DUT: `ctt-agent i2c --help`.
 
 ## C4. USB — ⏳ Phase 5
 

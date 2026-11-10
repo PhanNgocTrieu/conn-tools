@@ -70,6 +70,7 @@ void print_usage(FILE* f) {
         "Usage:\n"
         "  ctt-agent server [options]                 wait for a test session\n"
         "  ctt-agent client -e ENDPOINT [options]     run a test against a server\n"
+        "  ctt-agent i2c --bus N --addr 0xNN --step ...  I2C device test (MFi CP; see i2c --help)\n"
         "  ctt-agent list-transports | version | help\n"
         "\n"
         "Common options:\n"

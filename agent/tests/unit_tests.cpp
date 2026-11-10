@@ -20,6 +20,7 @@
 #include <thread>
 
 #include "bt_common.hpp"
+#include "ctt/i2c.hpp"
 #include "packet_stream.hpp"
 
 using namespace ctt;
@@ -360,6 +361,29 @@ static void test_rfcomm_listen() {
     CHECK(threw);
 }
 
+static void test_i2c_fake() {
+    CHECK(to_hex(parse_hex("0x0A:0b ff").data(), 3) == "0a0bff");
+    bool threw = false;
+    try { parse_hex("abc"); } catch (const std::exception&) { threw = true; }
+    CHECK(threw);
+
+    auto bus = open_i2c("fake,busy_ms=50,r00=05,r01=0102");
+    uint8_t reg = 0, b[4] = {0};
+    bus->transfer(0x10, &reg, 1, b, 2, false);
+    CHECK(b[0] == 0x05 && b[1] == 0x00);  // zero padded
+    reg = 1;
+    bus->transfer(0x10, &reg, 1, b, 2, false);
+    CHECK(b[0] == 0x01 && b[1] == 0x02);
+    threw = false;
+    try { bus->transfer(0x11, &reg, 1, b, 1, false); } catch (const I2cNack&) { threw = true; }
+    CHECK(threw);  // wrong address
+    const uint8_t w[] = {0x02, 0xAA};
+    bus->transfer(0x10, w, 2, nullptr, 0, false);
+    threw = false;
+    try { bus->transfer(0x10, &reg, 1, b, 1, false); } catch (const I2cNack&) { threw = true; }
+    CHECK(threw);  // busy after write
+}
+
 int main() {
     const std::pair<const char*, std::function<void()>> tests[] = {
         {"crc32", test_crc32},
@@ -371,6 +395,7 @@ int main() {
         {"bdaddr", test_bdaddr},
         {"packet_stream", test_packet_stream},
         {"rfcomm_listen", test_rfcomm_listen},
+        {"i2c_fake", test_i2c_fake},
     };
     for (const auto& [name, fn] : tests) {
         int before = g_failed;

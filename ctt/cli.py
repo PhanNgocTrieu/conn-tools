@@ -10,7 +10,8 @@ from pathlib import Path
 from ctt import __version__
 from ctt.agent import DEFAULT_DUT_AGENT, REPO_ROOT, find_host_agent
 from ctt.executor import LocalExecutor, SshExecutor, make_executor
-from ctt.report import ReportWriter, print_live_event, print_result, print_summary
+from ctt.report import (VERDICT_COLOR, ReportWriter, color, print_live_event, print_result,
+                        print_summary)
 from ctt.runner import MODES, Runner, TestSpec
 
 DUT_INFO_SCRIPT = r"""
@@ -191,6 +192,42 @@ def cmd_dut_info(args) -> int:
     if r.returncode != 0 and r.stderr.strip():
         print(r.stderr, file=sys.stderr)
     return r.returncode
+
+
+# ---- mfi ------------------------------------------------------------------------
+
+def cmd_mfi(args) -> int:
+    from ctt import mfi
+    cfg = mfi.load_config(args.config)
+    tests = cfg.tests
+    if args.only:
+        tests = [t for t in tests if any(o in t.id or o in t.name for o in args.only)]
+    dut = make_executor(args.dut, args.ssh_port, args.ssh_opt)
+    if isinstance(dut, LocalExecutor):
+        agent = args.dut_agent or args.host_agent or find_host_agent()
+    else:
+        agent = args.dut_agent or DEFAULT_DUT_AGENT
+    report = ReportWriter(args.out, f"mfi-{Path(args.config).stem}")
+    results = []
+    for i, t in enumerate(tests, 1):
+        print(f"\n[{i}/{len(tests)}] {t.id} {t.name}: {len(t.steps)} step(s) x{t.repeat} "
+              f"({mfi.describe(cfg)}, DUT={dut.name})")
+        r = mfi.run_test(dut, agent, cfg, t, args.repeat_scale)
+        results.append(r)
+        print(f"  => {color(r.verdict, VERDICT_COLOR[r.verdict])}  ({r.elapsed_s:.1f}s)")
+        if r.result and not args.quiet:
+            print(mfi.format_steps(r.result))
+        for c in r.checks:
+            if not c["ok"]:
+                print(f"     check {c['check']}: {c['value']} not {c['op']} {c['limit']}")
+        if r.error:
+            print(f"     error: {r.error}")
+        report.add_record(f"{t.id}_{t.name}", r.row(), r.to_dict())
+    report.finish({"run": "mfi", "config": str(args.config), "dut": dut.name,
+                   "ctt_version": __version__})
+    passed = sum(r.verdict == "PASS" for r in results)
+    print(f"\n{passed}/{len(results)} passed\nreport: {report.dir}")
+    return 0 if passed == len(results) else 1
 
 
 # ---- bluetooth ------------------------------------------------------------------
@@ -400,6 +437,16 @@ def build_parser() -> argparse.ArgumentParser:
     i.set_defaults(func=cmd_dut_info)
 
     _add_bt_parser(sub)
+
+    m = sub.add_parser("mfi", allow_abbrev=False,
+                       help="MFi auth coprocessor tests over I2C (config-driven)")
+    m.add_argument("config", help="MFi test config (see configs/mfi_cp.example.yaml)")
+    m.add_argument("--only", action="append", help="run tests whose id/name contains this")
+    m.add_argument("--repeat-scale", type=float, default=1.0,
+                   help="multiply every test's repeat count (e.g. 0.1 for a quick run)")
+    _add_dut_args(m)
+    _add_out_args(m)
+    m.set_defaults(func=cmd_mfi)
     return p
 
 
