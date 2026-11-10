@@ -72,6 +72,8 @@ class ReportWriter:
             "tests": rows,
         }
         (self.dir / "summary.json").write_text(json.dumps(summary, indent=2))
+        from ctt.html_report import write_reports
+        write_reports(self.dir)
 
 
 # ---- console ------------------------------------------------------------------
@@ -143,4 +145,4 @@ def print_summary(results: list[TestResult], out_dir: Path | None) -> None:
     passed = sum(r.verdict == "PASS" for r in results)
     print(f"\n{passed}/{len(results)} passed")
     if out_dir:
-        print(f"report: {out_dir}")
+        print(f"report: {out_dir}  (report.html, junit.xml)")

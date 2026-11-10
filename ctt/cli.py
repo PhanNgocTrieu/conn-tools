@@ -230,7 +230,7 @@ def cmd_mfi(args) -> int:
     report.finish({"run": "mfi", "config": str(args.config), "dut": dut.name,
                    "ctt_version": __version__})
     passed = sum(r.verdict == "PASS" for r in results)
-    print(f"\n{passed}/{len(results)} passed\nreport: {report.dir}")
+    print(f"\n{passed}/{len(results)} passed\nreport: {report.dir}  (report.html, junit.xml)")
     return 0 if passed == len(results) else 1
 
 
@@ -400,6 +400,23 @@ def _add_bt_parser(sub) -> None:
             _add_out_args(p)
 
 
+def cmd_report(args) -> int:
+    from ctt.html_report import write_reports
+    h, j = write_reports(args.run_dir)
+    print(f"{h}\n{j}")
+    return 0
+
+
+def cmd_compare(args) -> int:
+    from ctt.compare import compare, format_table
+    rows = compare(args.baseline, args.new, args.tolerance)
+    shown = rows if args.all else [r for r in rows if r["status"] != "ok"]
+    print(format_table(shown) if shown else "no differences beyond tolerance")
+    reg = [r for r in rows if r["status"] in ("regression", "missing")]
+    print(f"\n{len(reg)} regression(s) (tolerance {args.tolerance:g}%)")
+    return 1 if reg else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="ctt", description="Connectivity Test Tool",
                                 allow_abbrev=False)
@@ -441,6 +458,17 @@ def build_parser() -> argparse.ArgumentParser:
     i.set_defaults(func=cmd_dut_info)
 
     _add_bt_parser(sub)
+
+    rp = sub.add_parser("report", allow_abbrev=False, help="(re)build report.html + junit.xml")
+    rp.add_argument("run_dir", help="out/<timestamp>_<name> directory")
+    rp.set_defaults(func=cmd_report)
+
+    cp = sub.add_parser("compare", allow_abbrev=False, help="compare a run against a baseline run")
+    cp.add_argument("baseline", help="baseline run directory")
+    cp.add_argument("new", help="new run directory")
+    cp.add_argument("--tolerance", type=float, default=10.0, help="allowed change in %% (default 10)")
+    cp.add_argument("--all", action="store_true", help="also show unchanged metrics")
+    cp.set_defaults(func=cmd_compare)
 
     m = sub.add_parser("mfi", allow_abbrev=False,
                        help="MFi auth coprocessor tests over I2C (config-driven)")

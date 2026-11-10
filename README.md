@@ -64,11 +64,13 @@ Mọi mode đều kiểm tra `seq` (mất gói, sai thứ tự) và CRC-32 của
 Dùng `--expect KEY=VALUE` trên CLI hoặc khối `expect:` trong profile:
 `up_mbps_min`, `down_mbps_min`, `lost_max`, `crc_errors_max` (mặc định 0), `rtt_avg_us_max`, `rtt_p99_us_max`, `rtt_max_us_max`.
 
-`ctt` trả exit code 0 khi mọi test PASS, nên dùng trực tiếp được trong CI.
+`ctt` trả exit code 0 khi mọi test PASS, nên dùng trực tiếp được trong CI. Dùng `ctt compare BASE NEW` để phát hiện regression so với một lần chạy chuẩn.
 
 ## Report
 
 Mỗi lần chạy tạo thư mục `out/<timestamp>_<tên>/` gồm:
+- `report.html`: bảng tổng hợp và biểu đồ, một file duy nhất mở được offline
+- `junit.xml`: cho CI
 - `summary.csv`, `summary.json`
 - mỗi test một thư mục con chứa `result.json` (đủ cả hai phía) và `intervals.csv` (time-series theo từng interval)
 

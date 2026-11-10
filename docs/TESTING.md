@@ -216,6 +216,8 @@ Phạm vi test phụ thuộc vào vai trò cổng USB của board (host, device/
 Mỗi lần chạy tạo một thư mục `out/<thời-gian>_<tên>/`:
 
 ```
+report.html                       mở bằng trình duyệt: bảng tổng hợp, biểu đồ throughput theo thời gian, chi tiết check
+junit.xml                         cho CI (Jenkins / GitLab / GitHub Actions)
 summary.csv / summary.json        tổng hợp mọi test: throughput, lost, crc, rtt, verdict
 NN_<test>/result.json             đầy đủ: spec, kết quả hai phía, link info, lỗi
 NN_<test>/intervals.csv           throughput theo từng interval (vẽ biểu đồ, xem tụt/đứt)
@@ -238,6 +240,16 @@ NN_<test>/intervals.csv           throughput theo từng interval (vẽ biểu �
 - `ERROR`: test không chạy được (kết nối, pairing, agent...). Xem trường `error`.
 
 Exit code của `ctt` bằng 0 khi mọi test PASS, nên dùng trực tiếp được trong CI.
+
+**So sánh với baseline (regression):** giữ lại thư mục của một lần chạy "chuẩn" (ví dụ image release trước). Với mỗi image mới, chạy cùng profile rồi so sánh:
+
+```bash
+ctt compare out/<baseline-run> out/<new-run> --tolerance 10
+```
+
+Lệnh này báo các metric xấu đi quá 10% (throughput giảm; RTT, loss hoặc jitter tăng), các counter đáng lẽ bằng 0 (`lost`, `crc_errors`) mà tăng, và các test từ PASS chuyển sang không PASS. Exit code là 1 nếu có regression.
+
+Tạo lại `report.html` / `junit.xml` cho một thư mục cũ: `ctt report out/<run>`.
 
 ---
 
