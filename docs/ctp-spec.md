@@ -51,7 +51,7 @@ Bên nhận tách frame theo `payload_len`. Nếu `magic` sai thì stream đã m
 ### StatsPayload (88 B)
 
 `flags u32` (bit0 có rx, bit1 có tx), `reserved u32`, sau đó là 10 trường `u64`:
-`rx_frames, rx_bytes, rx_lost, rx_out_of_order, rx_crc_errors, rx_duration_ns, tx_frames, tx_bytes, tx_duration_ns, echoed`.
+`rx_frames, rx_bytes, rx_lost, rx_out_of_order, rx_crc_errors, rx_duration_ns, tx_frames, tx_bytes, tx_duration_ns, echoed`, và cuối cùng là `rx_jitter_ns u64` ở offset 88 (tổng 96 B). Bên nhận vẫn chấp nhận payload 88 B của bản cũ, khi đó jitter = 0.
 
 ## 3. Luồng session
 
@@ -77,7 +77,21 @@ client                                   server
 - **RTT**: `now − ts_ns` của `ECHO_RSP`, đo trên đồng hồ của client nên không cần đồng bộ clock giữa hai máy.
 - **Overhead**: header 32 B/frame. Ví dụ block 990 B (RFCOMM) thì overhead khoảng 3.1%, block 128 KiB (TCP) thì khoảng 0.02%. Throughput báo cáo là **goodput** (chỉ tính payload).
 
-## 5. Mở rộng
+## 5. Transport có mất gói (UDP)
+
+Mỗi frame được gửi trong đúng một datagram, nên một datagram bị mất chỉ làm mất một frame và không làm lệch luồng. Vì gói điều khiển cũng có thể bị mất, phần điều khiển chạy như sau:
+
+| Tình huống | Cách xử lý |
+|---|---|
+| START hoặc START_ACK bị mất | Client gửi lại START mỗi 300 ms, tối đa 10 lần. Server trả lại START_ACK khi nhận START trùng. DATA hoặc ECHO_RSP về trước ACK được coi là ACK ngầm, và frame đó vẫn được giữ để đo |
+| STOP bị mất | STOP luôn được gửi 3 bản. Nếu vẫn mất, bên nhận kết thúc sau khoảng idle (≤ 2 s) và report ghi `warning` |
+| STATS bị mất | Client gửi lại STOP mỗi 300 ms. Sau khi gửi STATS, server vẫn nghe thêm 1.5 s và trả lời lại STATS cho mỗi STOP |
+| ECHO bị mất | Mỗi request chờ tối đa max(200 ms, 4 × interval). Quá thời gian thì tính là `echo.lost`; reply đến muộn được đếm vào `echo.late` |
+| Frame cũ của phiên trước | Bỏ qua |
+
+Jitter tính theo RFC 3550: `J += (|D| − J)/16`, trong đó `D` là chênh lệch transit time giữa hai gói liên tiếp. Độ lệch đồng hồ giữa hai máy tự triệt tiêu trong phép tính này.
+
+## 6. Mở rộng
 
 - Thêm trường mới vào header thì phải tăng `version`. Trường `reserved` được dành cho flag mở rộng tương thích ngược.
 - Transport kiểu datagram (UDP, BLE GATT) gửi mỗi frame trong một datagram. Khi đó `lost` và `out_of_order` là số đo thật, không còn là dấu hiệu bug.

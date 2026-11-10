@@ -17,6 +17,8 @@ MODES = ("tx", "rx", "bidir", "echo")
 # any field of the server's "listening" event, e.g. {bdaddr}, {channel}, {psm}.
 TRANSPORT_DEFAULTS = {
     "tcp": {"port": 5201, "listen": "0.0.0.0:{port}", "target": "{addr}:{port}"},
+    # one frame per datagram; client defaults to 10 Mbit/s unless `rate` is set
+    "udp": {"port": 5201, "listen": "0.0.0.0:{port}", "target": "{addr}:{port}"},
     # port = RFCOMM channel; 0 lets the kernel pick a free one on the server
     "rfcomm": {"port": 0, "listen": "/{port}", "target": "{bdaddr}/{channel}"},
     # port = PSM; 0 -> agent default (0x1001 BR/EDR, 0x0080 LE)
@@ -50,6 +52,9 @@ class TestSpec:
     server_side: str = "dut"         # "dut" or "host"
     transport_opts: dict = field(default_factory=dict)
     expect: dict = field(default_factory=dict)
+    # WiFi link info from the DUT before/after the test: "auto" (first
+    # connected wireless interface), an interface name, or None (off)
+    wifi_iface: str | None = None
 
     @classmethod
     def from_dict(cls, d: dict) -> "TestSpec":
@@ -93,6 +98,7 @@ class TestResult:
     checks: list = field(default_factory=list)
     intervals: list = field(default_factory=list)   # client + server interval events
     server_events: list = field(default_factory=list)
+    wifi: dict = field(default_factory=dict)          # {"before": {...}, "after": {...}}
     error: str | None = None
     target: str | None = None
     started_at: float = 0.0
@@ -120,8 +126,17 @@ def summarize(result: dict) -> dict:
         m[f"{d}_bytes"] = rx.get("bytes")
         m[f"{d}_lost"] = rx.get("lost", 0)
         m[f"{d}_crc_errors"] = rx.get("crc_errors", 0)
+        if result.get("lossy"):
+            m[f"{d}_loss_pct"] = rx.get("loss_pct")
+            m[f"{d}_jitter_us"] = rx.get("jitter_us")
     m["lost"] = m.get("up_lost", 0) + m.get("down_lost", 0)
     m["crc_errors"] = m.get("up_crc_errors", 0) + m.get("down_crc_errors", 0)
+    if result.get("lossy"):
+        m["loss_pct"] = max((m.get(f"{d}_loss_pct") or 0) for d in ("up", "down"))
+        m["jitter_us"] = max((m.get(f"{d}_jitter_us") or 0) for d in ("up", "down"))
+    echo = result.get("echo")
+    if echo and result.get("lossy"):
+        m["echo_loss_pct"] = echo.get("loss_pct")
     rtt = result.get("rtt")
     if rtt:
         for k in ("count", "min_us", "avg_us", "p50_us", "p95_us", "p99_us", "max_us",
@@ -143,6 +158,10 @@ EXPECT_KEYS = {
     "rtt_avg_us_max": ("rtt_avg_us", "<="),
     "rtt_p99_us_max": ("rtt_p99_us", "<="),
     "rtt_max_us_max": ("rtt_max_us", "<="),
+    "loss_pct_max": ("loss_pct", "<="),           # UDP: worst direction
+    "jitter_us_max": ("jitter_us", "<="),         # UDP: worst direction
+    "echo_loss_pct_max": ("echo_loss_pct", "<="),
+    "wifi_signal_dbm_min": ("wifi_signal_dbm", ">="),
 }
 
 # Applied to every test unless overridden: data must arrive intact.
@@ -196,7 +215,7 @@ class Runner:
             raise ValueError(f"{spec.name}: transport '{spec.transport}' needs 'endpoint'")
         if d.get("local_only") and not isinstance(self.dut, LocalExecutor):
             raise ValueError(f"{spec.name}: transport '{spec.transport}' only works with --dut local")
-        if spec.transport == "tcp" and spec.server_side == "host" and \
+        if spec.transport in ("tcp", "udp") and spec.server_side == "host" and \
                 not isinstance(self.dut, LocalExecutor):
             # 127.0.0.1 would point the DUT at itself.
             raise ValueError(
@@ -217,6 +236,11 @@ class Runner:
             raise ValueError(f"{spec.name}: cannot build target, server did not report {e}") \
                 from None
 
+    def _wifi(self, spec: TestSpec) -> dict:
+        from ctt import wifi
+        iface = None if spec.wifi_iface == "auto" else spec.wifi_iface
+        return wifi.pick(wifi.collect(self.dut, iface), iface)
+
     def run(self, spec: TestSpec) -> TestResult:
         res = TestResult(spec=spec, started_at=time.time())
         t_start = time.monotonic()
@@ -226,6 +250,8 @@ class Runner:
             server = AgentProcess(
                 s_exec.popen(server_args(s_agent, spec, self._listen(spec), accept_timeout=30)),
                 f"server@{s_exec.name}")
+            if spec.wifi_iface:
+                res.wifi["before"] = self._wifi(spec)
             ev = server.wait_for("listening", timeout=15)
             self.on_event("server", ev)
             target = self._target(spec, s_exec, ev)
@@ -255,7 +281,13 @@ class Runner:
                 else:
                     res.server_events.append(ev)
 
+            if spec.wifi_iface:
+                res.wifi["after"] = self._wifi(spec)
             res.metrics = summarize(res.result)
+            link = res.wifi.get("before") or {}
+            for k in ("signal_dbm", "tx_bitrate_mbps", "rx_bitrate_mbps", "freq_mhz"):
+                if link.get(k) is not None:
+                    res.metrics[f"wifi_{k}"] = link[k]
             res.checks = evaluate(res.metrics, spec.expect)
             res.verdict = "PASS" if all(c["ok"] for c in res.checks) else "FAIL"
         except Exception as e:  # noqa: BLE001 - reported per test

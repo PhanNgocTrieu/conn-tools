@@ -41,6 +41,7 @@ python3 -m ctt bt pair-stress --dut-accept -n 50 --connect  # độ ổn định
 | `-t` | Dùng cho | Endpoint |
 |---|---|---|
 | `tcp` | WiFi, Ethernet, USB-NCM | `host:port` |
+| `udp` | WiFi/Ethernet: mất gói thật, jitter (luôn đặt `-r`) | `host:port` |
 | `rfcomm` | Bluetooth Classic (SPP) | `BDADDR/CHANNEL` (server: channel 0 = tự cấp) |
 | `l2cap` | BT L2CAP CoC, BR/EDR hoặc LE (`-o type=le`) | `BDADDR/PSM` |
 | `unix` | test/CI không cần radio (`-o type=seqpacket -o mtu=` giả lập L2CAP) | `@name` |
@@ -99,5 +100,5 @@ tests/      Python tests (python3 -m unittest discover -s tests), fakes/ (blueto
 | TCP (WiFi/Ethernet/USB-NCM) | ✅ Phase 1 |
 | Bluetooth RFCOMM / L2CAP + pairing (`ctt bt`) | ✅ Phase 2 (đã test không cần radio; chờ test với dongle + DUT) |
 | MFi Auth CP (I2C) — `ctt mfi` | ✅ Phase 3 (đã test với bus giả lập; chờ register map + board) |
-| WiFi UDP + link info | ⏳ Phase 4 |
+| WiFi UDP (loss/jitter) + link info (`--wifi`) | ✅ Phase 4 |
 | USB bulk (gadget / libusb) | ⏳ Phase 5 |

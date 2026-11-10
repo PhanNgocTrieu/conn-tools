@@ -23,11 +23,14 @@ struct RxCounters {
     uint64_t last_ns = 0;
     uint32_t next_seq = 0;
     bool started = false;
+    double jitter_ns = 0;  // RFC 3550 interarrival jitter
+    int64_t last_transit = 0;
+    bool have_transit = false;
 
     // Marks the start of the measurement window (e.g. when START_ACK is
     // exchanged). If never called, the first frame starts the window.
     void begin(uint64_t now);
-    void on_frame(uint32_t seq, uint32_t len, uint64_t now, bool crc_ok);
+    void on_frame(uint32_t seq, uint32_t len, uint64_t now, bool crc_ok, uint64_t sender_ts = 0);
     uint64_t duration_ns() const { return started ? last_ns - first_ns : 0; }
     Json to_json() const;
 };
@@ -44,7 +47,7 @@ struct TxCounters {
 };
 
 Json rx_json(uint64_t frames, uint64_t bytes, uint64_t lost, uint64_t ooo, uint64_t crc,
-             uint64_t duration_ns);
+             uint64_t duration_ns, double jitter_ns = 0);
 Json tx_json(uint64_t frames, uint64_t bytes, uint64_t duration_ns);
 
 class RttStats {

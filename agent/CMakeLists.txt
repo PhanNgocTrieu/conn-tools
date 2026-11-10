@@ -18,6 +18,8 @@ add_library(ctt_core STATIC
   src/i2c_cmd.cpp
   src/transports/fd_stream.cpp
   src/transports/tcp.cpp
+  src/transports/net_common.cpp
+  src/transports/udp.cpp
   src/transports/bt_common.cpp
   src/transports/packet_stream.cpp
   src/transports/rfcomm.cpp

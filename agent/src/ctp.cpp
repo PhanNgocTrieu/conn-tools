@@ -106,8 +106,8 @@ bool decode_start(const uint8_t* in, size_t len, StartParams& p) {
     return p.block_size > 0 && p.block_size <= kMaxPayload;
 }
 
-// STATS layout (88 bytes): 0 flags u32 (bit0 rx, bit1 tx) | 4 reserved u32 |
-// 8.. ten u64 counters in declaration order.
+// STATS layout (96 bytes): 0 flags u32 (bit0 rx, bit1 tx) | 4 reserved u32 |
+// 8.. ten u64 counters in declaration order | 88 rx_jitter_ns u64.
 void encode_stats(const StatsPayload& s, uint8_t* o) {
     std::memset(o, 0, kStatsSize);
     put_le32(o, (s.has_rx ? 1u : 0u) | (s.has_tx ? 2u : 0u));
@@ -115,10 +115,11 @@ void encode_stats(const StatsPayload& s, uint8_t* o) {
                             s.rx_crc_errors,  s.rx_duration_ns,       s.tx_frames,
                             s.tx_bytes,       s.tx_duration_ns,       s.echoed};
     for (int i = 0; i < 10; ++i) put_le64(o + 8 + 8 * i, v[i]);
+    put_le64(o + 88, s.rx_jitter_ns);
 }
 
 bool decode_stats(const uint8_t* in, size_t len, StatsPayload& s) {
-    if (len < kStatsSize) return false;
+    if (len < kStatsMinSize) return false;
     uint32_t f = get_le32(in);
     s.has_rx = f & 1;
     s.has_tx = f & 2;
@@ -126,6 +127,7 @@ bool decode_stats(const uint8_t* in, size_t len, StatsPayload& s) {
                        &s.rx_crc_errors, &s.rx_duration_ns, &s.tx_frames, &s.tx_bytes,
                        &s.tx_duration_ns, &s.echoed};
     for (int i = 0; i < 10; ++i) *v[i] = get_le64(in + 8 + 8 * i);
+    s.rx_jitter_ns = len >= 96 ? get_le64(in + 88) : 0;
     return true;
 }
 

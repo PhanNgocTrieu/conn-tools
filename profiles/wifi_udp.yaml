@@ -1,0 +1,38 @@
+# WiFi UDP: real packet loss and jitter at fixed offered loads, plus link info.
+# The DUT (board) runs the agent server; point -e at its WiFi address if SSH
+# goes over Ethernet:
+#   ctt profile profiles/wifi_udp.yaml --dut root@<dut-eth-ip>       (edit `endpoint` below)
+#   ctt profile profiles/wifi_udp.yaml --dut root@<dut-wifi-ip>      (all over WiFi)
+# Thresholds are placeholders - set them from the product requirement.
+name: wifi-udp
+defaults:
+  transport: udp
+  duration: 20s
+  block: 1440                # 1472-byte datagrams: no IP fragmentation
+  wifi_iface: auto           # record signal / bitrates on the DUT
+  # endpoint: 192.168.50.20:5201   # DUT WiFi address (when SSH uses Ethernet)
+  expect:
+    loss_pct_max: 1.0
+    jitter_us_max: 5000
+
+tests:
+  # Offered-load sweep: find the rate where loss starts
+  - name: up-load
+    mode: tx
+    matrix:
+      rate: [10M, 50M, 100M, 200M]
+  - name: down-load
+    mode: rx
+    matrix:
+      rate: [10M, 50M, 100M, 200M]
+  # VoIP-like stream: small packets, low rate - jitter matters
+  - name: voip-like
+    mode: bidir
+    block: 160
+    rate: 64k
+    expect: {loss_pct_max: 0.5, jitter_us_max: 3000}
+  # Round trip with loss accounting
+  - name: rtt
+    mode: echo
+    echo_interval_ms: 20
+    expect: {echo_loss_pct_max: 1.0, rtt_p99_us_max: 50000}

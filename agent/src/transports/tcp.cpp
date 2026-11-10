@@ -11,58 +11,12 @@
 
 #include "ctt/json.hpp"
 #include "fd_stream.hpp"
+#include "net_common.hpp"
 
 namespace ctt {
 namespace {
 
-constexpr const char* kDefaultPort = "5201";
-
-void split_host_port(const std::string& ep, std::string& host, std::string& port) {
-    if (!ep.empty() && ep[0] == '[') {
-        auto close = ep.find(']');
-        if (close == std::string::npos) throw std::runtime_error("bad endpoint: " + ep);
-        host = ep.substr(1, close - 1);
-        port = (close + 1 < ep.size() && ep[close + 1] == ':') ? ep.substr(close + 2) : "";
-    } else {
-        auto colon = ep.rfind(':');
-        if (colon == std::string::npos) {
-            host = ep;
-            port.clear();
-        } else {
-            host = ep.substr(0, colon);
-            port = ep.substr(colon + 1);
-        }
-    }
-    if (port.empty()) port = kDefaultPort;
-}
-
-std::string addr_to_string(const sockaddr* sa) {
-    char host[NI_MAXHOST], serv[NI_MAXSERV];
-    socklen_t len = sa->sa_family == AF_INET6 ? sizeof(sockaddr_in6) : sizeof(sockaddr_in);
-    if (getnameinfo(sa, len, host, sizeof(host), serv, sizeof(serv),
-                    NI_NUMERICHOST | NI_NUMERICSERV) != 0)
-        return "?";
-    if (sa->sa_family == AF_INET6) return std::string("[") + host + "]:" + serv;
-    return std::string(host) + ":" + serv;
-}
-
-struct AddrInfo {
-    addrinfo* ai = nullptr;
-    ~AddrInfo() {
-        if (ai) freeaddrinfo(ai);
-    }
-};
-
-void resolve(const std::string& ep, bool passive, AddrInfo& out) {
-    std::string host, port;
-    split_host_port(ep, host, port);
-    addrinfo hints{};
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = passive ? AI_PASSIVE : 0;
-    int rc = getaddrinfo(host.empty() ? nullptr : host.c_str(), port.c_str(), &hints, &out.ai);
-    if (rc != 0) throw std::runtime_error("resolve " + ep + ": " + gai_strerror(rc));
-}
+using namespace net;
 
 class TcpStream : public FdStream {
 public:
@@ -129,7 +83,7 @@ public:
 
     std::unique_ptr<Listener> listen(const std::string& ep, const TransportOptions& o) override {
         AddrInfo res;
-        resolve(ep.empty() ? default_listen_endpoint() : ep, true, res);
+        resolve(ep.empty() ? default_listen_endpoint() : ep, true, SOCK_STREAM, res);
         std::string last_err = "no address";
         for (addrinfo* a = res.ai; a; a = a->ai_next) {
             int fd = ::socket(a->ai_family, a->ai_socktype | SOCK_CLOEXEC, a->ai_protocol);
@@ -154,7 +108,7 @@ public:
 
     std::unique_ptr<Stream> connect(const std::string& ep, const TransportOptions& o) override {
         AddrInfo res;
-        resolve(ep, false, res);
+        resolve(ep, false, SOCK_STREAM, res);
         std::string last_err = "no address";
         for (addrinfo* a = res.ai; a; a = a->ai_next) {
             int fd = ::socket(a->ai_family, a->ai_socktype | SOCK_CLOEXEC, a->ai_protocol);

@@ -1,7 +1,7 @@
 # Hướng dẫn test — Connectivity Test Tool (CTT)
 
 > DUT: **Vendor board**, Linux build bằng Yocto. Host: Windows + WSL2 (Ubuntu 24.04).
-> Áp dụng cho CTT v0.1 (Phase 0–3). Test USB sẽ được bổ sung khi tool hỗ trợ.
+> Áp dụng cho CTT v0.1 (Phase 0–4). Test USB sẽ được bổ sung khi tool hỗ trợ.
 
 Tài liệu gồm 3 cấp test, chạy theo thứ tự:
 
@@ -91,7 +91,7 @@ alias ctt="python3 -m ctt"
 
 ---
 
-## C1. WiFi (TCP)
+## C1. WiFi (TCP / UDP)
 
 **Điều kiện:**
 - DUT đã kết nối cùng AP với PC, hoặc PC kết nối vào SoftAP của DUT.
@@ -110,14 +110,21 @@ WIFI=<ip-wifi-của-DUT>
 | **WIFI-04** | Độ trễ khứ hồi | `ctt run -e $WIFI:5201 -m echo -d 20s --expect rtt_p99_us_max=<Y>` | p99 ≤ Y |
 | **WIFI-05** | Ảnh hưởng của kích thước ghi | `ctt profile profiles/tcp_smoke.yaml` (test `block-sweep`, có thể thêm `-e`) | Không lỗi. Ghi đường cong throughput theo block |
 | **WIFI-06** | Soak (độ ổn định lâu dài) | `ctt run -e $WIFI:5201 -m bidir -d 1h -i 10s --name wifi-soak` | Không ERROR. Throughput trong `intervals.csv` không tụt về 0 |
-| **WIFI-07** | Bộ test chuẩn | `ctt profile profiles/wifi_tcp_throughput.yaml` (sửa ngưỡng `expect` trước) | Mọi test PASS |
+| **WIFI-07** | Bộ test chuẩn TCP | `ctt profile profiles/wifi_tcp_throughput.yaml` (sửa ngưỡng `expect` trước) | Mọi test PASS |
+| **WIFI-08** | UDP: mất gói và jitter ở tải cố định | `ctt run -t udp -e $WIFI:5201 -m tx -r 50M -d 30s --wifi --expect loss_pct_max=1` | loss ≤ 1%. Ghi lại jitter |
+| **WIFI-09** | UDP: tìm mức tải bắt đầu mất gói | `ctt profile profiles/wifi_udp.yaml --only load` | Mức tải cao nhất mà loss vẫn ≤ ngưỡng (đọc trong `summary.csv`) |
+| **WIFI-10** | Luồng kiểu VoIP (gói nhỏ, tốc độ thấp) | `ctt profile profiles/wifi_udp.yaml --only voip` | loss ≤ 0.5%, jitter ≤ 3 ms |
+| **WIFI-11** | RTT qua UDP, có đếm request bị mất | `ctt run -t udp -e $WIFI:5201 -m echo --echo-interval 20 -d 30s --expect echo_loss_pct_max=1` | echo loss ≤ 1% |
+
+**Thông tin link:** thêm `--wifi` (hoặc `wifi_iface: auto` trong profile). Tool sẽ đọc `iw dev <if> link` trên DUT trước và sau mỗi test, rồi đưa signal (dBm), tx/rx bitrate và tần số vào report (`wifi_*` trong summary). Có thể đặt điều kiện `--expect wifi_signal_dbm_min=-65` để loại các lần đo khi sóng yếu.
+
+**UDP khác TCP ở chỗ nào:** UDP không retransmit, nên `lost` / `loss_pct` là tỉ lệ mất gói thật trên sóng, và `jitter_us` là jitter theo RFC 3550. Client mặc định giới hạn 10 Mbit/s, nên luôn đặt `-r`. Trong `result.json`, mục `link.udp_rcvbuf_errors` khác 0 nghĩa là gói bị rơi ngay trong buffer của máy nhận (do CPU hoặc buffer), không phải trên sóng.
 
 **Ghi kèm vào báo cáo:**
-- Kết quả `iw dev wlan0 link` trên DUT: RSSI, bitrate, tần số. Chạy bằng `ssh $CTT_DUT iw dev wlan0 link`.
+- Kết quả `iw dev wlan0 link` trên DUT (đã tự động có khi dùng `--wifi`).
 - Băng tần 2.4/5 GHz, kênh, và chuẩn của AP.
 
 > Lưu ý về WSL: traffic đi qua card WiFi hoặc Ethernet của Windows. Nếu PC nối với AP bằng Ethernet, số đo phản ánh đúng link WiFi của DUT. Nếu PC cũng dùng WiFi, cả hai đầu cùng chia sẻ sóng, nên throughput sẽ thấp hơn.
-> Test UDP (đo mất gói thật, jitter) sẽ có ở Phase 4.
 
 ---
 
@@ -219,7 +226,9 @@ NN_<test>/intervals.csv           throughput theo từng interval (vẽ biểu �
 | `up_mbps` | host → DUT, **đo ở DUT** (bên nhận), là số dùng để kết luận |
 | `down_mbps` | DUT → host, đo ở host |
 | `*_sender_mbps` | lượng byte bên gửi đẩy vào socket. Luôn ≥ số bên nhận, chỉ dùng để tham khảo |
-| `lost`, `crc_errors` | Với TCP/RFCOMM/L2CAP thì phải bằng 0. Khác 0 nghĩa là có bug (driver, firmware, stack) |
+| `lost`, `crc_errors` | Với TCP/RFCOMM/L2CAP thì phải bằng 0. Khác 0 nghĩa là có bug (driver, firmware, stack). Với UDP, `lost` là mất gói thật |
+| `loss_pct`, `jitter_us` | Chỉ có với UDP: tỉ lệ mất gói của chiều tệ nhất, jitter RFC 3550 |
+| `wifi_signal_dbm`, `wifi_tx/rx_bitrate_mbps` | Có khi dùng `--wifi`: link WiFi của DUT lúc bắt đầu test |
 | `rtt_*_us` | Độ trễ khứ hồi ở tầng ứng dụng |
 | `link` (trong result.json) | WiFi/TCP: retransmits, cwnd. BT: security, ACL MTU, bộ đếm byte của HCI |
 

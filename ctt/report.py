@@ -112,6 +112,11 @@ def print_result(r: TestResult) -> None:
     if "down_mbps" in m:
         print(f"     down (server->client): {_fmt(m['down_mbps'], 3):>10} Mbps  "
               f"lost={m.get('down_lost')} crc_err={m.get('down_crc_errors')}")
+    if "loss_pct" in m:
+        print(f"     udp: loss {_fmt(m['loss_pct'], 3)}%  jitter {_fmt(m.get('jitter_us'), 1)} us")
+    if "wifi_signal_dbm" in m:
+        print(f"     wifi: signal {m['wifi_signal_dbm']} dBm  tx {_fmt(m.get('wifi_tx_bitrate_mbps'), 1)}"
+              f" / rx {_fmt(m.get('wifi_rx_bitrate_mbps'), 1)} Mbit/s")
     if "rtt_avg_us" in m:
         print(f"     rtt: avg {_fmt(m['rtt_avg_us'], 1)} us  p99 {_fmt(m.get('rtt_p99_us'), 1)} us"
               f"  max {_fmt(m.get('rtt_max_us'), 1)} us  (n={m.get('rtt_count')})")

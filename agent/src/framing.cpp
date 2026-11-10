@@ -27,6 +27,18 @@ bool FrameReader::ensure(size_t n) {
     return true;
 }
 
+bool FrameReader::have_frame() const {
+    if (end_ - start_ < ctp::kHeaderSize) return false;
+    ctp::Header h;
+    if (ctp::decode_header(buf_.data() + start_, h) != ctp::DecodeStatus::Ok) return true;  // let next() throw
+    return end_ - start_ >= ctp::kHeaderSize + h.payload_len;
+}
+
+FrameReader::Status FrameReader::next_for(ctp::Header& h, const uint8_t*& payload, int timeout_ms) {
+    if (!have_frame() && !s_.wait_readable(timeout_ms)) return Status::Timeout;
+    return next(h, payload) ? Status::Frame : Status::Eof;
+}
+
 bool FrameReader::next(ctp::Header& h, const uint8_t*& payload) {
     if (start_ == end_) start_ = end_ = 0;
     if (!ensure(ctp::kHeaderSize)) return false;
@@ -36,6 +48,7 @@ bool FrameReader::next(ctp::Header& h, const uint8_t*& payload) {
     size_t total = ctp::kHeaderSize + h.payload_len;
     if (!ensure(total)) throw std::runtime_error("connection closed in the middle of a frame");
     payload = buf_.data() + start_ + ctp::kHeaderSize;
+    last_start_ = start_;
     start_ += total;
     return true;
 }

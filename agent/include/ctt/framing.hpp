@@ -19,8 +19,17 @@ public:
     // until the next call.
     bool next(ctp::Header& h, const uint8_t*& payload);
 
+    // Like next(), but gives up after timeout_ms without a complete frame.
+    enum class Status { Frame, Eof, Timeout };
+    Status next_for(ctp::Header& h, const uint8_t*& payload, int timeout_ms);
+
+    // Makes the frame just returned by next()/next_for() be returned again.
+    void push_back() { start_ = last_start_; }
+
 private:
     bool ensure(size_t n);
+    bool have_frame() const;
+    size_t last_start_ = 0;
 
     Stream& s_;
     std::vector<uint8_t> buf_;

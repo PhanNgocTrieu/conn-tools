@@ -83,8 +83,10 @@ struct StatsPayload {
     uint64_t tx_bytes = 0;
     uint64_t tx_duration_ns = 0;
     uint64_t echoed = 0;
+    uint64_t rx_jitter_ns = 0;  // since v1 stats-96 (absent in 88-byte payloads)
 };
-constexpr size_t kStatsSize = 88;
+constexpr size_t kStatsSize = 96;
+constexpr size_t kStatsMinSize = 88;
 void encode_stats(const StatsPayload& s, uint8_t* out /* kStatsSize */);
 bool decode_stats(const uint8_t* in, size_t len, StatsPayload& out);
 

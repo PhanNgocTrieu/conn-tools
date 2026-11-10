@@ -12,8 +12,18 @@ void RxCounters::begin(uint64_t now) {
     first_ns = last_ns = now;
 }
 
-void RxCounters::on_frame(uint32_t seq, uint32_t len, uint64_t now, bool crc_ok) {
+void RxCounters::on_frame(uint32_t seq, uint32_t len, uint64_t now, bool crc_ok,
+                          uint64_t sender_ts) {
     if (!started) begin(now);
+    if (sender_ts) {
+        int64_t transit = int64_t(now) - int64_t(sender_ts);
+        if (have_transit) {
+            double d = double(transit - last_transit);
+            jitter_ns += (std::fabs(d) - jitter_ns) / 16.0;
+        }
+        last_transit = transit;
+        have_transit = true;
+    }
     // Senders always start at seq 0, so a gap before the first frame is loss too.
     if (seq == next_seq) {
         next_seq = seq + 1;
@@ -32,7 +42,7 @@ void RxCounters::on_frame(uint32_t seq, uint32_t len, uint64_t now, bool crc_ok)
 }
 
 Json rx_json(uint64_t frames, uint64_t bytes, uint64_t lost, uint64_t ooo, uint64_t crc,
-             uint64_t duration_ns) {
+             uint64_t duration_ns, double jitter_ns) {
     Json j;
     j.add("frames", frames)
         .add("bytes", bytes)
@@ -40,7 +50,9 @@ Json rx_json(uint64_t frames, uint64_t bytes, uint64_t lost, uint64_t ooo, uint6
         .add("out_of_order", ooo)
         .add("crc_errors", crc)
         .add("duration_s", double(duration_ns) / 1e9)
-        .add("mbps", mbps(bytes, duration_ns));
+        .add("mbps", mbps(bytes, duration_ns))
+        .add("loss_pct", frames + lost ? 100.0 * double(lost) / double(frames + lost) : 0.0)
+        .add("jitter_us", jitter_ns / 1000.0);
     return j;
 }
 
@@ -54,7 +66,7 @@ Json tx_json(uint64_t frames, uint64_t bytes, uint64_t duration_ns) {
 }
 
 Json RxCounters::to_json() const {
-    return rx_json(frames, bytes, lost, out_of_order, crc_errors, duration_ns());
+    return rx_json(frames, bytes, lost, out_of_order, crc_errors, duration_ns(), jitter_ns);
 }
 
 Json TxCounters::to_json() const { return tx_json(frames, bytes, duration_ns()); }

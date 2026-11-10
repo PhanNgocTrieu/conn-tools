@@ -40,6 +40,11 @@ public:
     virtual std::string peer() const = 0;
     // Transport specific link information (RTT, MTU, RSSI, ...).
     virtual void link_info(Json& /*out*/) const {}
+    // Datagram transports (UDP) may drop or reorder frames, including control
+    // frames; the session layer then uses retries and idle timeouts.
+    virtual bool lossy() const { return false; }
+    // True when data can be read without blocking; false after timeout_ms.
+    virtual bool wait_readable(int /*timeout_ms*/) { return true; }
 };
 
 class Listener {

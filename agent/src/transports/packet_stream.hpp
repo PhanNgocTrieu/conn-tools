@@ -17,15 +17,19 @@ public:
 
     ssize_t read_some(uint8_t* buf, size_t len) override;
     ssize_t writev_some(const struct iovec* iov, int iovcnt) override;
+    bool wait_readable(int timeout_ms) override {
+        return pend_off_ < pend_len_ || FdStream::wait_readable(timeout_ms);
+    }
 
     size_t omtu() const { return omtu_; }
     size_t imtu() const { return imtu_; }
     uint64_t packets_tx() const { return packets_tx_; }
     uint64_t packets_rx() const { return packets_rx_; }
 
-private:
+protected:
     ssize_t recv_packet(uint8_t* buf, size_t len);
 
+private:
     size_t omtu_;
     size_t imtu_;
     std::vector<uint8_t> pend_;

@@ -68,6 +68,9 @@ def _add_test_args(p: argparse.ArgumentParser) -> None:
     g.add_argument("--sndbuf", default=None)
     g.add_argument("--rcvbuf", default=None)
     g.add_argument("--nodelay", action="store_true")
+    g.add_argument("--wifi", nargs="?", const="auto", default=None, dest="wifi_iface",
+                   metavar="IFACE", help="record the DUT's WiFi link (signal, bitrate) "
+                                         "before/after; IFACE default: auto")
     g.add_argument("--timeout", default=None,
                    help="agent idle I/O timeout, e.g. 30s (default 10s)")
     g.add_argument("-o", "--opt", action="append", default=[], metavar="KEY=VALUE",
@@ -134,6 +137,7 @@ def cmd_run(args) -> int:
         "endpoint": args.endpoint,
         "listen": args.listen, "server_side": args.server_side, "sndbuf": args.sndbuf,
         "rcvbuf": args.rcvbuf, "nodelay": args.nodelay, "timeout": args.timeout,
+        "wifi_iface": args.wifi_iface,
         "transport_opts": _kv(args.opt, "--opt"),
         "expect": {k: float(v) for k, v in _kv(args.expect, "--expect").items()},
     }
