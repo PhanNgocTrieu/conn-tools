@@ -5,7 +5,7 @@ Tool đo throughput, latency và độ toàn vẹn dữ liệu cho USB / WiFi / 
 - `ctt-agent` (C++17): một binary duy nhất, chạy cả trên host (x86_64, WSL) và DUT (aarch64). Hoạt động theo mô hình server/client giống iperf và dùng giao thức chung [CTP](docs/ctp-spec.md).
 - `ctt` (Python): CLI điều phối. Deploy agent lên DUT qua SSH, chạy hai phía, áp tiêu chí pass/fail và xuất report JSON/CSV.
 
-Kế hoạch tổng thể: [docs/PLAN.md](docs/PLAN.md) · Cài môi trường: [docs/wsl-setup.md](docs/wsl-setup.md) · Bluetooth: [docs/bluetooth.md](docs/bluetooth.md)
+Kế hoạch tổng thể: [docs/PLAN.md](docs/PLAN.md) · **Hướng dẫn test: [docs/TESTING.md](docs/TESTING.md)** · Cài môi trường: [docs/wsl-setup.md](docs/wsl-setup.md) · Bluetooth: [docs/bluetooth.md](docs/bluetooth.md)
 
 ## Bắt đầu nhanh
 
@@ -87,7 +87,7 @@ ctt/        Python orchestrator (CLI, SSH, runner, profile, report)
 profiles/   YAML test profiles
 scripts/    setup-wsl.sh, build-host.sh, build-dut.sh, usbipd-attach.ps1
 cmake/      toolchain files
-docs/       PLAN, CTP spec, WSL setup
+docs/       PLAN, TESTING (test cases), CTP spec, WSL setup, bluetooth
 tests/      Python tests (python3 -m unittest discover -s tests), fakes/ (bluetoothctl giả lập)
 ```
 

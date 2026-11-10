@@ -67,6 +67,8 @@ def _add_test_args(p: argparse.ArgumentParser) -> None:
     g.add_argument("--sndbuf", default=None)
     g.add_argument("--rcvbuf", default=None)
     g.add_argument("--nodelay", action="store_true")
+    g.add_argument("--timeout", default=None,
+                   help="agent idle I/O timeout, e.g. 30s (default 10s)")
     g.add_argument("-o", "--opt", action="append", default=[], metavar="KEY=VALUE",
                    help="transport option, repeatable")
     g.add_argument("--expect", action="append", default=[], metavar="KEY=VALUE",
@@ -130,7 +132,7 @@ def cmd_run(args) -> int:
         "interval": args.interval, "port": args.port, "bdaddr": args.bdaddr,
         "endpoint": args.endpoint,
         "listen": args.listen, "server_side": args.server_side, "sndbuf": args.sndbuf,
-        "rcvbuf": args.rcvbuf, "nodelay": args.nodelay,
+        "rcvbuf": args.rcvbuf, "nodelay": args.nodelay, "timeout": args.timeout,
         "transport_opts": _kv(args.opt, "--opt"),
         "expect": {k: float(v) for k, v in _kv(args.expect, "--expect").items()},
     }
@@ -307,7 +309,7 @@ def cmd_bt(args) -> int:
 
 def _add_bt_parser(sub) -> None:
     from ctt.bt import CAPABILITIES
-    bt = sub.add_parser("bt", help="Bluetooth controller / pairing (via bluetoothctl)")
+    bt = sub.add_parser("bt", allow_abbrev=False, help="Bluetooth controller / pairing (via bluetoothctl)")
     bsub = bt.add_subparsers(dest="bt_cmd", required=True)
 
     def common(p, side_default="host", addr: str | None = None):
@@ -323,13 +325,13 @@ def _add_bt_parser(sub) -> None:
                            help="peer address (default: the DUT's controller, read via --dut)")
         p.set_defaults(func=cmd_bt)
 
-    common(bsub.add_parser("list", help="list controllers"))
-    p = bsub.add_parser("scan", help="discover nearby devices")
+    common(bsub.add_parser("list", allow_abbrev=False, help="list controllers"))
+    p = bsub.add_parser("scan", allow_abbrev=False, help="discover nearby devices")
     common(p)
     p.add_argument("-t", "--time", type=float, default=10)
-    common(bsub.add_parser("info", help="device properties"), addr="required")
-    common(bsub.add_parser("unpair", help="remove a paired device"), addr="required")
-    p = bsub.add_parser("prepare", help="power on + pairable + discoverable + agent")
+    common(bsub.add_parser("info", allow_abbrev=False, help="device properties"), addr="required")
+    common(bsub.add_parser("unpair", allow_abbrev=False, help="remove a paired device"), addr="required")
+    p = bsub.add_parser("prepare", allow_abbrev=False, help="power on + pairable + discoverable + agent")
     common(p, side_default="dut")
     p.add_argument("--capability", choices=CAPABILITIES, default="NoInputNoOutput")
     p.add_argument("--no-discoverable", action="store_true")
@@ -338,7 +340,7 @@ def _add_bt_parser(sub) -> None:
 
     for name, helptext in (("pair", "pair host -> peer (default peer: the DUT)"),
                            ("pair-stress", "repeat remove/discover/pair N times")):
-        p = bsub.add_parser(name, help=helptext)
+        p = bsub.add_parser(name, allow_abbrev=False, help=helptext)
         common(p, addr="optional")
         p.add_argument("--capability", choices=CAPABILITIES, default="NoInputNoOutput",
                        help="host agent IO capability")
@@ -358,17 +360,18 @@ def _add_bt_parser(sub) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="ctt", description="Connectivity Test Tool")
+    p = argparse.ArgumentParser(prog="ctt", description="Connectivity Test Tool",
+                                allow_abbrev=False)
     p.add_argument("--version", action="version", version=f"ctt {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    r = sub.add_parser("run", help="run a single test")
+    r = sub.add_parser("run", allow_abbrev=False, help="run a single test")
     _add_dut_args(r)
     _add_test_args(r)
     _add_out_args(r)
     r.set_defaults(func=cmd_run)
 
-    pr = sub.add_parser("profile", help="run a YAML test profile")
+    pr = sub.add_parser("profile", allow_abbrev=False, help="run a YAML test profile")
     pr.add_argument("profile")
     pr.add_argument("--only", action="append", help="run tests whose name contains this")
     pr.add_argument("--list", action="store_true", help="list expanded tests and exit")
@@ -377,7 +380,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_out_args(pr)
     pr.set_defaults(func=cmd_profile)
 
-    st = sub.add_parser("selftest", help="all modes over TCP loopback on this machine")
+    st = sub.add_parser("selftest", allow_abbrev=False, help="all modes over TCP loopback on this machine")
     st.add_argument("-d", "--duration", default="2s")
     st.add_argument("--port", type=int, default=5299)
     st.add_argument("--ssh-port", type=int, default=None)
@@ -387,12 +390,12 @@ def build_parser() -> argparse.ArgumentParser:
     _add_out_args(st)
     st.set_defaults(func=cmd_selftest)
 
-    d = sub.add_parser("deploy", help="copy ctt-agent to the DUT")
+    d = sub.add_parser("deploy", allow_abbrev=False, help="copy ctt-agent to the DUT")
     d.add_argument("--binary", default=None, help="default: build/dut/agent/ctt-agent")
     _add_dut_args(d)
     d.set_defaults(func=cmd_deploy)
 
-    i = sub.add_parser("dut-info", help="inventory of the DUT's connectivity stack")
+    i = sub.add_parser("dut-info", allow_abbrev=False, help="inventory of the DUT's connectivity stack")
     _add_dut_args(i)
     i.set_defaults(func=cmd_dut_info)
 

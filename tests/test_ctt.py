@@ -127,6 +127,13 @@ class LoopbackIntegrationTest(unittest.TestCase):
         self.assertEqual(r.verdict, "ERROR")
         self.assertTrue(r.error)
 
+    def test_cli_no_abbreviations(self):
+        from ctt.cli import build_parser
+        with self.assertRaises(SystemExit):  # must not be read as --dut-agent
+            build_parser().parse_args(["run", "--dut-a", "x"])
+        args = build_parser().parse_args(["run", "--timeout", "30s"])
+        self.assertEqual(args.timeout, "30s")
+
     def test_cli_selftest(self):
         from ctt.cli import main
         with tempfile.TemporaryDirectory() as d:
