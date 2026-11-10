@@ -48,6 +48,9 @@ public:
     // timeout_ms < 0: wait forever. Returns nullptr on timeout.
     virtual std::unique_ptr<Stream> accept(int timeout_ms) = 0;
     virtual std::string local() const = 0;
+    // Extra fields for the "listening" event (e.g. bdaddr + RFCOMM channel),
+    // so the orchestrator can build the client's target endpoint.
+    virtual void describe(Json& /*out*/) const {}
 };
 
 class Transport {

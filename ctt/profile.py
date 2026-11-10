@@ -12,6 +12,7 @@
         mode: tx
         matrix:          # cartesian product -> one test per combination
           block: [1K, 16K, 128K]
+          transport_opts.security: [low, high]   # dotted key = nested field
 """
 
 from __future__ import annotations
@@ -51,9 +52,14 @@ def expand(doc: dict, overrides: dict | None = None) -> tuple[str, list[TestSpec
             for k in ("expect", "transport_opts"):
                 if isinstance(defaults.get(k), dict) and isinstance(t.get(k), dict):
                     d[k] = {**defaults[k], **t[k]}
-            d.update(dict(zip(keys, combo)))
+            for k, v in zip(keys, combo):
+                if "." in k:  # nested, e.g. transport_opts.security
+                    parent, child = k.split(".", 1)
+                    d[parent] = {**(d.get(parent) or {}), child: v}
+                else:
+                    d[k] = v
             d.update(overrides or {})
-            d["name"] = base_name + "".join(f"-{k}={v}" for k, v in zip(keys, combo))
+            d["name"] = base_name + "".join(f"-{k.split('.')[-1]}={v}" for k, v in zip(keys, combo))
             specs.append(TestSpec.from_dict(d))
     return name, specs
 

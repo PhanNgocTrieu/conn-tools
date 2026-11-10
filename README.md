@@ -5,7 +5,7 @@ Tool đo throughput, latency và độ toàn vẹn dữ liệu cho USB / WiFi / 
 - `ctt-agent` (C++17): một binary duy nhất, chạy cả trên host (x86_64, WSL) và DUT (aarch64). Hoạt động theo mô hình server/client giống iperf và dùng giao thức chung [CTP](docs/ctp-spec.md).
 - `ctt` (Python): CLI điều phối. Deploy agent lên DUT qua SSH, chạy hai phía, áp tiêu chí pass/fail và xuất report JSON/CSV.
 
-Kế hoạch tổng thể: [docs/PLAN.md](docs/PLAN.md) · Cài môi trường: [docs/wsl-setup.md](docs/wsl-setup.md)
+Kế hoạch tổng thể: [docs/PLAN.md](docs/PLAN.md) · Cài môi trường: [docs/wsl-setup.md](docs/wsl-setup.md) · Bluetooth: [docs/bluetooth.md](docs/bluetooth.md)
 
 ## Bắt đầu nhanh
 
@@ -26,6 +26,24 @@ python3 -m ctt profile profiles/wifi_tcp_throughput.yaml --dut root@192.168.1.50
 ```
 
 Đặt `export CTT_DUT=root@192.168.1.50` để khỏi phải gõ `--dut` mỗi lần.
+
+Bluetooth (chi tiết ở [docs/bluetooth.md](docs/bluetooth.md)):
+
+```bash
+python3 -m ctt bt pair --dut-accept                         # host pair với DUT (lấy địa chỉ DUT qua SSH)
+python3 -m ctt run -t rfcomm -m bidir -d 30s                # RFCOMM throughput
+python3 -m ctt profile profiles/bt_rfcomm_throughput.yaml
+python3 -m ctt bt pair-stress --dut-accept -n 50 --connect  # độ ổn định pairing
+```
+
+## Transports
+
+| `-t` | Dùng cho | Endpoint |
+|---|---|---|
+| `tcp` | WiFi, Ethernet, USB-NCM | `host:port` |
+| `rfcomm` | Bluetooth Classic (SPP) | `BDADDR/CHANNEL` (server: channel 0 = tự cấp) |
+| `l2cap` | BT L2CAP CoC, BR/EDR hoặc LE (`-o type=le`) | `BDADDR/PSM` |
+| `unix` | test/CI không cần radio (`-o type=seqpacket -o mtu=` giả lập L2CAP) | `@name` |
 
 ## Các mode
 
@@ -70,7 +88,7 @@ profiles/   YAML test profiles
 scripts/    setup-wsl.sh, build-host.sh, build-dut.sh, usbipd-attach.ps1
 cmake/      toolchain files
 docs/       PLAN, CTP spec, WSL setup
-tests/      Python tests (python3 -m unittest discover -s tests)
+tests/      Python tests (python3 -m unittest discover -s tests), fakes/ (bluetoothctl giả lập)
 ```
 
 ## Trạng thái
@@ -78,7 +96,7 @@ tests/      Python tests (python3 -m unittest discover -s tests)
 | Interface | Trạng thái |
 |---|---|
 | TCP (WiFi/Ethernet/USB-NCM) | ✅ Phase 1 |
-| Bluetooth RFCOMM / L2CAP | ⏳ Phase 2 |
+| Bluetooth RFCOMM / L2CAP + pairing (`ctt bt`) | ✅ Phase 2 (đã test không cần radio; chờ test với dongle + DUT) |
 | MFi Auth CP (I2C) | ⏳ Phase 3 |
 | WiFi UDP + link info | ⏳ Phase 4 |
 | USB bulk (gadget / libusb) | ⏳ Phase 5 |

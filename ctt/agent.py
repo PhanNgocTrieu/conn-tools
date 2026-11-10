@@ -96,6 +96,19 @@ class AgentProcess:
         if self.proc.poll() is None:
             self.proc.kill()
 
+    def close(self):
+        """Kills the process if still running and releases its pipes."""
+        self.kill()
+        try:
+            self.proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
+        self._t_out.join(timeout=2)
+        self._t_err.join(timeout=2)
+        for f in (self.proc.stdout, self.proc.stderr):
+            if f:
+                f.close()
+
     def stderr_text(self) -> str:
         return "\n".join(self.stderr_lines[-20:]).strip() or "(no stderr)"
 

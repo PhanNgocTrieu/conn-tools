@@ -134,6 +134,7 @@ int run_server(const AgentOptions& o) {
 
     Json jl;
     jl.add("event", "listening").add("transport", t->name()).add("endpoint", lis->local());
+    lis->describe(jl);
     out::emit(jl, out::strprintf("ctt-agent server listening on %s %s", t->name(),
                                  lis->local().c_str()));
 

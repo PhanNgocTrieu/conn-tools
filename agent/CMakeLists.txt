@@ -16,6 +16,11 @@ add_library(ctt_core STATIC
   src/client.cpp
   src/transports/fd_stream.cpp
   src/transports/tcp.cpp
+  src/transports/bt_common.cpp
+  src/transports/packet_stream.cpp
+  src/transports/rfcomm.cpp
+  src/transports/l2cap.cpp
+  src/transports/unix.cpp
   src/transports/registry.cpp
 )
 target_include_directories(ctt_core

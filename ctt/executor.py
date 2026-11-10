@@ -8,10 +8,20 @@ import tempfile
 from pathlib import Path
 
 
+def _popen(argv: list[str], interactive: bool) -> subprocess.Popen:
+    if interactive:
+        return subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, bufsize=0)
+    return subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            stdin=subprocess.DEVNULL, text=True, bufsize=1)
+
+
 class Executor:
     name = "?"
 
-    def popen(self, argv: list[str]) -> subprocess.Popen:
+    def popen(self, argv: list[str], interactive: bool = False) -> subprocess.Popen:
+        """interactive=True: stdin is a pipe and stdout is raw bytes, unbuffered
+        (for driving tools like bluetoothctl)."""
         raise NotImplementedError
 
     def run(self, argv: list[str] | str, timeout: float = 30) -> subprocess.CompletedProcess:
@@ -26,9 +36,8 @@ class Executor:
 class LocalExecutor(Executor):
     name = "local"
 
-    def popen(self, argv):
-        return subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                stdin=subprocess.DEVNULL, text=True, bufsize=1)
+    def popen(self, argv, interactive=False):
+        return _popen(argv, interactive)
 
     def run(self, argv, timeout=30):
         return subprocess.run(argv, shell=isinstance(argv, str), capture_output=True, text=True,
@@ -74,11 +83,9 @@ class SshExecutor(Executor):
     def _ssh(self, command: str) -> list[str]:
         return ["ssh", *self.opts, "-T", self.target, command]
 
-    def popen(self, argv):
+    def popen(self, argv, interactive=False):
         # `exec` so that the remote shell is replaced by the agent process.
-        return subprocess.Popen(self._ssh("exec " + shlex.join(argv)), stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, stdin=subprocess.DEVNULL, text=True,
-                                bufsize=1)
+        return _popen(self._ssh("exec " + shlex.join(argv)), interactive)
 
     def run(self, argv, timeout=30):
         cmd = argv if isinstance(argv, str) else shlex.join(argv)

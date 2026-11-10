@@ -12,11 +12,19 @@ from ctt.units import parse_rate, parse_seconds, parse_size
 
 MODES = ("tx", "rx", "bidir", "echo")
 
-# Default "server" listen endpoint and client target per transport.
-# {addr} = address of the machine running the server, {port} = spec.port
+# Per transport: default port, server bind endpoint and client target.
+# Templates may use {port}, {addr} (network address of the server machine) and
+# any field of the server's "listening" event, e.g. {bdaddr}, {channel}, {psm}.
 TRANSPORT_DEFAULTS = {
-    "tcp": {"listen": "0.0.0.0:{port}", "target": "{addr}:{port}"},
+    "tcp": {"port": 5201, "listen": "0.0.0.0:{port}", "target": "{addr}:{port}"},
+    # port = RFCOMM channel; 0 lets the kernel pick a free one on the server
+    "rfcomm": {"port": 0, "listen": "/{port}", "target": "{bdaddr}/{channel}"},
+    # port = PSM; 0 -> agent default (0x1001 BR/EDR, 0x0080 LE)
+    "l2cap": {"port": 0, "listen": "/{port}", "target": "{bdaddr}/{psm}"},
+    "unix": {"port": 0, "listen": "@ctt-{port}", "target": "{endpoint}", "local_only": True},
 }
+BT_TRANSPORTS = ("rfcomm", "l2cap")
+ZERO_BDADDR = "00:00:00:00:00:00"
 
 
 @dataclass
@@ -35,7 +43,8 @@ class TestSpec:
     sndbuf: int | None = None
     rcvbuf: int | None = None
     timeout: float | None = None     # agent idle I/O timeout
-    port: int = 5201
+    port: int | None = None          # tcp port / RFCOMM channel / L2CAP PSM
+    bdaddr: str | None = None        # BT address of the server side (if not auto-detected)
     endpoint: str | None = None      # client target; default derived from transport
     listen: str | None = None        # server bind; default derived from transport
     server_side: str = "dut"         # "dut" or "host"
@@ -51,8 +60,9 @@ class TestSpec:
             raise ValueError(f"unknown test field(s): {', '.join(sorted(unknown))}")
         if "duration" in d:
             d["duration"] = parse_seconds(d["duration"])
-        if "interval" in d:
-            d["interval"] = parse_seconds(d["interval"])
+        for k in ("interval", "timeout"):
+            if d.get(k) is not None:
+                d[k] = parse_seconds(d[k])
         if d.get("block") is not None:
             d["block"] = parse_size(d["block"])
         if d.get("rate") is not None:
@@ -84,6 +94,7 @@ class TestResult:
     intervals: list = field(default_factory=list)   # client + server interval events
     server_events: list = field(default_factory=list)
     error: str | None = None
+    target: str | None = None
     started_at: float = 0.0
     elapsed_s: float = 0.0
 
@@ -168,22 +179,43 @@ class Runner:
             return (self.dut, self.dut_agent), (self.host, self.host_agent)
         return (self.host, self.host_agent), (self.dut, self.dut_agent)
 
-    def _endpoints(self, spec: TestSpec, server_exec: Executor) -> tuple[str | None, str]:
-        defaults = TRANSPORT_DEFAULTS.get(spec.transport, {})
-        listen = spec.listen
-        if listen is None and "listen" in defaults:
-            listen = defaults["listen"].format(port=spec.port)
-        target = spec.endpoint
-        if target is None:
-            if spec.server_side == "host" and not isinstance(self.dut, LocalExecutor):
-                # 127.0.0.1 would point the DUT at itself.
+    def _listen(self, spec: TestSpec) -> str | None:
+        if spec.listen is not None:
+            return spec.listen
+        d = TRANSPORT_DEFAULTS.get(spec.transport)
+        if not d:
+            return None  # agent default
+        port = spec.port if spec.port is not None else d["port"]
+        return d["listen"].format(port=port)
+
+    def _target(self, spec: TestSpec, server_exec: Executor, listening: dict) -> str:
+        if spec.endpoint:
+            return spec.endpoint
+        d = TRANSPORT_DEFAULTS.get(spec.transport)
+        if not d:
+            raise ValueError(f"{spec.name}: transport '{spec.transport}' needs 'endpoint'")
+        if d.get("local_only") and not isinstance(self.dut, LocalExecutor):
+            raise ValueError(f"{spec.name}: transport '{spec.transport}' only works with --dut local")
+        if spec.transport == "tcp" and spec.server_side == "host" and \
+                not isinstance(self.dut, LocalExecutor):
+            # 127.0.0.1 would point the DUT at itself.
+            raise ValueError(
+                f"{spec.name}: server runs on the host, so the DUT needs the host's "
+                "address - set 'endpoint' (e.g. 192.168.1.10:5201)")
+        fields = {**listening, "addr": server_exec.address,
+                  "port": spec.port if spec.port is not None else d["port"]}
+        if spec.transport in BT_TRANSPORTS:
+            if spec.bdaddr:
+                fields["bdaddr"] = spec.bdaddr
+            if fields.get("bdaddr", ZERO_BDADDR) == ZERO_BDADDR:
                 raise ValueError(
-                    f"{spec.name}: server runs on the host, so the DUT needs the host's "
-                    "address - set 'endpoint' (e.g. 192.168.1.10:5201)")
-            if "target" not in defaults:
-                raise ValueError(f"{spec.name}: transport '{spec.transport}' needs 'endpoint'")
-            target = defaults["target"].format(addr=server_exec.address, port=spec.port)
-        return listen, target
+                    f"{spec.name}: the server's Bluetooth address is unknown (no adapter "
+                    f"found by the agent on the {spec.server_side}) - set 'bdaddr'")
+        try:
+            return d["target"].format(**fields)
+        except KeyError as e:
+            raise ValueError(f"{spec.name}: cannot build target, server did not report {e}") \
+                from None
 
     def run(self, spec: TestSpec) -> TestResult:
         res = TestResult(spec=spec, started_at=time.time())
@@ -191,13 +223,13 @@ class Runner:
         server = client = None
         try:
             (s_exec, s_agent), (c_exec, c_agent) = self._sides(spec)
-            listen, target = self._endpoints(spec, s_exec)
-
             server = AgentProcess(
-                s_exec.popen(server_args(s_agent, spec, listen, accept_timeout=30)),
+                s_exec.popen(server_args(s_agent, spec, self._listen(spec), accept_timeout=30)),
                 f"server@{s_exec.name}")
             ev = server.wait_for("listening", timeout=15)
             self.on_event("server", ev)
+            target = self._target(spec, s_exec, ev)
+            res.target = target
 
             client = AgentProcess(c_exec.popen(client_args(c_agent, spec, target)),
                                   f"client@{c_exec.name}")
@@ -234,6 +266,6 @@ class Runner:
         finally:
             for p in (client, server):
                 if p:
-                    p.kill()
+                    p.close()
             res.elapsed_s = time.monotonic() - t_start
         return res

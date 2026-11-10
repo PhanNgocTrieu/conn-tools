@@ -13,6 +13,15 @@
 #include "ctt/options.hpp"
 #include "ctt/pattern.hpp"
 
+#include <sys/socket.h>
+#include <unistd.h>
+
+#include <cerrno>
+#include <thread>
+
+#include "bt_common.hpp"
+#include "packet_stream.hpp"
+
 using namespace ctt;
 
 static int g_failed = 0;
@@ -218,6 +227,139 @@ static void test_parsers() {
     CHECK(!parse_args(4, const_cast<char**>(bad), o2, err));  // missing endpoint
 }
 
+
+static void test_bdaddr() {
+    bt::Bdaddr a;
+    CHECK(a.is_any());
+    CHECK(bt::parse_bdaddr("AA:BB:CC:DD:EE:0f", a));
+    CHECK(a.b[0] == 0x0F && a.b[5] == 0xAA);  // stored reversed, like bdaddr_t
+    CHECK(bt::to_string(a) == "AA:BB:CC:DD:EE:0F");
+    CHECK(!a.is_any());
+    CHECK(!bt::parse_bdaddr("AA:BB:CC:DD:EE", a));
+    CHECK(!bt::parse_bdaddr("AA-BB-CC-DD-EE-FF", a));
+    CHECK(!bt::parse_bdaddr("AA:BB:CC:DD:EE:GG", a));
+
+    std::string addr, num;
+    bt::split_endpoint("AA:BB:CC:DD:EE:FF/3", addr, num);
+    CHECK(addr == "AA:BB:CC:DD:EE:FF" && num == "3");
+    bt::split_endpoint("/0x1001", addr, num);
+    CHECK(addr.empty() && bt::parse_number(num, "psm") == 0x1001);
+    bt::split_endpoint("hci0", addr, num);
+    CHECK(addr == "hci0" && num.empty());
+    bool threw = false;
+    try { bt::parse_number("12x", "n"); } catch (const std::exception&) { threw = true; }
+    CHECK(threw);
+
+    CHECK(bt::parse_security("medium") == 2 && bt::parse_security("bogus") == -1);
+    CHECK(std::string(bt::security_name(3)) == "high");
+}
+
+// PacketStream over a real AF_UNIX SOCK_SEQPACKET pair: every write must be
+// split into <= MTU packets and reassembled without loss.
+static void test_packet_stream() {
+    int sv[2];
+    CHECK(socketpair(AF_UNIX, SOCK_SEQPACKET, 0, sv) == 0);
+    PacketStream tx(sv[0], "a", 48, 48);
+    PacketStream rx(sv[1], "b", 48, 48);
+
+    PatternSource pat(500, true);
+    std::thread writer([&] {
+        for (uint32_t seq = 0; seq < 50; ++seq) {
+            ctp::Header h;
+            h.type = ctp::MsgType::Data;
+            h.flags = ctp::kFlagCrc;
+            h.seq = seq;
+            h.crc32 = pat.crc(seq);
+            send_frame(tx, h, pat.payload(seq), 500);
+        }
+        send_control(tx, ctp::MsgType::Stop, 50);
+        tx.shutdown_write();
+    });
+    FrameReader rd(rx, 100);  // smaller than a frame, larger than MTU
+    ctp::Header h;
+    const uint8_t* p = nullptr;
+    int ok_frames = 0;
+    while (rd.next(h, p)) {
+        if (h.type == ctp::MsgType::Stop) break;
+        if (h.payload_len == 500 && crc32(p, 500) == h.crc32) ++ok_frames;
+    }
+    writer.join();
+    CHECK(ok_frames == 50);
+    CHECK(tx.packets_tx() == 50 * ((32 + 500 + 47) / 48) + 1);  // ceil(532/48) per frame + STOP
+    CHECK(rx.packets_rx() == tx.packets_tx());
+
+    // Tiny reads (bounce-buffer path) still see every byte in order.
+    uint8_t msg[100];
+    for (int i = 0; i < 100; ++i) msg[i] = uint8_t(i);
+    int sv2[2];
+    CHECK(socketpair(AF_UNIX, SOCK_SEQPACKET, 0, sv2) == 0);
+    PacketStream a(sv2[0], "a", 64, 64), b(sv2[1], "b", 64, 64);
+    iovec iov{msg, sizeof(msg)};
+    write_all(a, &iov, 1);
+    uint8_t got[100];
+    size_t n = 0;
+    while (n < 100) {
+        ssize_t r = b.read_some(got + n, 7);
+        CHECK(r > 0);
+        if (r <= 0) break;
+        n += size_t(r);
+    }
+    CHECK(std::memcmp(got, msg, 100) == 0);
+    CHECK(a.packets_tx() == 2);
+
+    // A packet larger than imtu must be an error, never silently truncated.
+    int sv3[2];
+    CHECK(socketpair(AF_UNIX, SOCK_SEQPACKET, 0, sv3) == 0);
+    PacketStream big(sv3[0], "a", 200, 200), small(sv3[1], "b", 64, 64);
+    iovec iov2{msg, 100};
+    write_all(big, &iov2, 1);
+    bool threw = false;
+    try {
+        uint8_t buf[256];
+        small.read_some(buf, 10);  // < imtu -> bounce buffer of imtu (64) < packet (100)
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    CHECK(threw);
+}
+
+// Real kernel RFCOMM socket: listen on channel 0 must yield a kernel-assigned
+// channel. Skipped when the kernel has no AF_BLUETOOTH support.
+static void test_rfcomm_listen() {
+    int probe = ::socket(bt::kAfBluetooth, SOCK_STREAM, bt::kProtoRfcomm);
+    if (probe < 0) {
+        std::printf("  (skipped: no AF_BLUETOOTH/RFCOMM in this kernel: %s)\n", std::strerror(errno));
+        return;
+    }
+    ::close(probe);
+    Transport* t = find_transport("rfcomm");
+    CHECK(t != nullptr);
+    TransportOptions o;
+    auto l1 = t->listen("/0", o);
+    auto l2 = t->listen("", o);
+    Json j1, j2;
+    l1->describe(j1);
+    l2->describe(j2);
+    CHECK(j1.str().find("\"channel\":0") == std::string::npos);
+    CHECK(j1.str() != j2.str());  // two listeners -> two different channels
+    CHECK(l1->accept(10) == nullptr);  // times out cleanly
+
+    bool threw = false;
+    try {
+        t->listen("/31", o);
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    CHECK(threw);
+    threw = false;
+    try {
+        t->connect("not-an-address/1", o);
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    CHECK(threw);
+}
+
 int main() {
     const std::pair<const char*, std::function<void()>> tests[] = {
         {"crc32", test_crc32},
@@ -226,6 +368,9 @@ int main() {
         {"framing", test_framing},
         {"rx_counters", test_rx_counters},
         {"parsers", test_parsers},
+        {"bdaddr", test_bdaddr},
+        {"packet_stream", test_packet_stream},
+        {"rfcomm_listen", test_rfcomm_listen},
     };
     for (const auto& [name, fn] : tests) {
         int before = g_failed;

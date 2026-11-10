@@ -56,7 +56,10 @@ def _add_test_args(p: argparse.ArgumentParser) -> None:
     g.add_argument("--echo-interval", type=float, default=None, dest="echo_interval_ms",
                    help="echo: ms between requests (0 = back-to-back)")
     g.add_argument("-i", "--interval", default="1s", help="report interval")
-    g.add_argument("--port", type=int, default=5201)
+    g.add_argument("--port", type=lambda v: int(v, 0), default=None,
+                   help="tcp port (5201) / RFCOMM channel (0 = auto) / L2CAP PSM")
+    g.add_argument("--bdaddr", default=None,
+                   help="BT address of the server side, if the agent cannot detect it")
     g.add_argument("-e", "--endpoint", default=None, help="explicit client target")
     g.add_argument("--listen", default=None, help="explicit server bind endpoint")
     g.add_argument("--server-side", choices=("dut", "host"), default="dut",
@@ -124,7 +127,8 @@ def cmd_run(args) -> int:
         "transport": args.transport, "mode": args.mode, "duration": args.duration,
         "block": args.block, "rate": args.rate, "verify": not args.no_verify,
         "count": args.count, "echo_interval_ms": args.echo_interval_ms,
-        "interval": args.interval, "port": args.port, "endpoint": args.endpoint,
+        "interval": args.interval, "port": args.port, "bdaddr": args.bdaddr,
+        "endpoint": args.endpoint,
         "listen": args.listen, "server_side": args.server_side, "sndbuf": args.sndbuf,
         "rcvbuf": args.rcvbuf, "nodelay": args.nodelay,
         "transport_opts": _kv(args.opt, "--opt"),
@@ -187,6 +191,172 @@ def cmd_dut_info(args) -> int:
     return r.returncode
 
 
+# ---- bluetooth ------------------------------------------------------------------
+
+def _bt_ctl(args, side: str, **kw):
+    import shlex
+    from ctt.bt import BluetoothCtl
+    ex = LocalExecutor() if side == "host" else make_executor(args.dut, args.ssh_port,
+                                                              args.ssh_opt)
+    if side == "dut" and isinstance(ex, LocalExecutor):
+        raise SystemExit("ctt bt: --side dut needs --dut user@host")
+    cmd = shlex.split(args.btctl) if args.btctl else None
+    ctl = BluetoothCtl(ex, label=f"bt@{side}", command=cmd, **kw)
+    ctl.wait_ready()
+    return ctl
+
+
+def _bt_peer(args) -> str:
+    """Peer address for host-side operations: explicit, or the DUT's controller."""
+    from ctt.bt import default_controller
+    if args.addr:
+        return args.addr.upper()
+    with _bt_ctl(args, "dut") as dut:
+        addr = default_controller(dut)
+    print(f"DUT controller: {addr}")
+    return addr
+
+
+def cmd_bt(args) -> int:
+    import json
+    import time
+    from ctt.bt import pair_once, pair_stress, prepare_acceptor
+    act = args.bt_cmd
+
+    if act == "list":
+        with _bt_ctl(args, args.side) as ctl:
+            for c in ctl.controllers():
+                print(f"{c['address']}  {c['name']}{'  [default]' if c['default'] else ''}")
+        return 0
+    if act == "scan":
+        with _bt_ctl(args, args.side) as ctl:
+            ctl.set("power", True)
+            for addr, name in sorted(ctl.scan(args.time).items()):
+                print(f"{addr}  {name}")
+        return 0
+    if act == "info":
+        with _bt_ctl(args, args.side) as ctl:
+            info = ctl.info(args.addr)
+        if info is None:
+            print(f"{args.addr}: not known on {args.side}")
+            return 1
+        for k, v in info.items():
+            print(f"{k:>16}: {', '.join(v) if isinstance(v, list) else v}")
+        return 0
+    if act == "unpair":
+        with _bt_ctl(args, args.side) as ctl:
+            print("removed" if ctl.remove(args.addr) else "not paired / unknown")
+        return 0
+    if act == "prepare":
+        with _bt_ctl(args, args.side) as ctl:
+            prepare_acceptor(ctl, args.capability, discoverable=not args.no_discoverable)
+            print(f"{args.side}: powered, pairable"
+                  f"{'' if args.no_discoverable else ', discoverable'}, agent {args.capability}")
+            if args.hold:
+                print(f"holding the agent for {args.hold:g}s (auto-accepting pairing) ...")
+                time.sleep(args.hold)
+        return 0
+
+    # pair / pair-stress: host initiates, DUT optionally auto-accepts
+    peer = _bt_peer(args)
+    dut_ctl = None
+    try:
+        if args.dut_accept:
+            dut_ctl = _bt_ctl(args, "dut")
+            prepare_acceptor(dut_ctl, "NoInputNoOutput")
+            print("DUT: agent registered, pairable + discoverable")
+        with _bt_ctl(args, "host", pin=args.pin, passkey=args.passkey) as host:
+            host.register_agent(args.capability)
+            host.set("power", True)
+            if act == "pair":
+                a = pair_once(host, peer, args.scan_timeout, args.timeout, trust=not args.no_trust)
+                print(f"{'OK  ' if a.ok else 'FAIL'} pair {peer}: {a.message} "
+                      f"(discover {a.discover_s:.1f}s, pair {a.pair_s:.1f}s)")
+                if host.prompts:
+                    print("  prompts answered: " + "; ".join(host.prompts))
+                return 0 if a.ok else 1
+
+            def show(a):
+                conn = "" if a.connect_ok is None else f" connect={'ok' if a.connect_ok else 'FAIL'}"
+                print(f"  [{a.index:3d}/{args.count}] {'OK  ' if a.ok else 'FAIL'} "
+                      f"pair {a.pair_s:5.2f}s discover {a.discover_s:5.2f}s{conn}  {a.message}")
+
+            print(f"pair stress: {peer} x{args.count}")
+            res = pair_stress(host, peer, args.count, args.scan_timeout, args.timeout,
+                              connect=args.connect, on_attempt=show)
+            summ = res.summary()
+            print(f"\nsuccess {summ['success']}/{summ['attempts']} "
+                  f"({summ['success_rate'] * 100:.1f}%)", end="")
+            if "pair_s_avg" in summ:
+                print(f"  pair time min/avg/max {summ['pair_s_min']:.2f}/"
+                      f"{summ['pair_s_avg']:.2f}/{summ['pair_s_max']:.2f} s")
+            else:
+                print()
+            out = Path(args.out) / f"{time.strftime('%Y%m%d-%H%M%S')}_bt-pair-stress"
+            out.mkdir(parents=True, exist_ok=True)
+            (out / "result.json").write_text(json.dumps(res.to_dict(), indent=2))
+            print(f"report: {out}")
+            ok = res.success == len(res.attempts)
+            if args.min_success_rate is not None:
+                ok = summ["success_rate"] >= args.min_success_rate
+            return 0 if ok else 1
+    finally:
+        if dut_ctl:
+            dut_ctl.close()
+
+
+def _add_bt_parser(sub) -> None:
+    from ctt.bt import CAPABILITIES
+    bt = sub.add_parser("bt", help="Bluetooth controller / pairing (via bluetoothctl)")
+    bsub = bt.add_subparsers(dest="bt_cmd", required=True)
+
+    def common(p, side_default="host", addr: str | None = None):
+        _add_dut_args(p)
+        p.add_argument("--side", choices=("host", "dut"), default=side_default,
+                       help=f"where to run bluetoothctl (default {side_default})")
+        p.add_argument("--btctl", default=os.environ.get("CTT_BLUETOOTHCTL"),
+                       help=argparse.SUPPRESS)  # alternate bluetoothctl command (tests)
+        if addr == "required":
+            p.add_argument("addr", help="peer address AA:BB:CC:DD:EE:FF")
+        elif addr == "optional":
+            p.add_argument("addr", nargs="?", default=None,
+                           help="peer address (default: the DUT's controller, read via --dut)")
+        p.set_defaults(func=cmd_bt)
+
+    common(bsub.add_parser("list", help="list controllers"))
+    p = bsub.add_parser("scan", help="discover nearby devices")
+    common(p)
+    p.add_argument("-t", "--time", type=float, default=10)
+    common(bsub.add_parser("info", help="device properties"), addr="required")
+    common(bsub.add_parser("unpair", help="remove a paired device"), addr="required")
+    p = bsub.add_parser("prepare", help="power on + pairable + discoverable + agent")
+    common(p, side_default="dut")
+    p.add_argument("--capability", choices=CAPABILITIES, default="NoInputNoOutput")
+    p.add_argument("--no-discoverable", action="store_true")
+    p.add_argument("--hold", type=float, default=0,
+                   help="keep the agent alive N seconds to accept incoming pairing")
+
+    for name, helptext in (("pair", "pair host -> peer (default peer: the DUT)"),
+                           ("pair-stress", "repeat remove/discover/pair N times")):
+        p = bsub.add_parser(name, help=helptext)
+        common(p, addr="optional")
+        p.add_argument("--capability", choices=CAPABILITIES, default="NoInputNoOutput",
+                       help="host agent IO capability")
+        p.add_argument("--pin", default="0000", help="legacy PIN to answer with")
+        p.add_argument("--passkey", default=None, help="passkey to answer with")
+        p.add_argument("--no-trust", action="store_true")
+        p.add_argument("--dut-accept", action="store_true",
+                       help="run an auto-accepting agent on the DUT (BlueZ on the DUT)")
+        p.add_argument("--scan-timeout", type=float, default=20)
+        p.add_argument("--timeout", type=float, default=40, help="pairing timeout")
+        if name == "pair-stress":
+            p.add_argument("-n", "--count", type=int, default=10)
+            p.add_argument("--connect", action="store_true", help="also connect after pairing")
+            p.add_argument("--min-success-rate", type=float, default=None,
+                           help="pass threshold 0..1 (default: every attempt must pass)")
+            _add_out_args(p)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="ctt", description="Connectivity Test Tool")
     p.add_argument("--version", action="version", version=f"ctt {__version__}")
@@ -225,6 +395,8 @@ def build_parser() -> argparse.ArgumentParser:
     i = sub.add_parser("dut-info", help="inventory of the DUT's connectivity stack")
     _add_dut_args(i)
     i.set_defaults(func=cmd_dut_info)
+
+    _add_bt_parser(sub)
     return p
 
 
@@ -232,7 +404,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
-    except (FileNotFoundError, ValueError, RuntimeError) as e:
+    except (FileNotFoundError, ValueError, RuntimeError) as e:  # includes bt.BtError
         print(f"ctt: {e}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:

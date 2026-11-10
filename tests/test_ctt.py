@@ -31,6 +31,7 @@ class SpecTest(unittest.TestCase):
         s = TestSpec.from_dict({"name": "a", "mode": "bidir", "block": "4K", "duration": "3s",
                                 "rate": "2M"})
         self.assertEqual((s.block, s.duration, s.rate), (4096, 3.0, 2_000_000))
+        self.assertEqual(TestSpec.from_dict({"timeout": "20s"}).timeout, 20.0)
         with self.assertRaises(ValueError):
             TestSpec.from_dict({"mode": "sideways"})
         with self.assertRaises(ValueError):
@@ -52,6 +53,19 @@ class SpecTest(unittest.TestCase):
         self.assertEqual(specs[4].name, "test2")
         _, specs = expand(doc, {"duration": "1s"})
         self.assertTrue(all(s.duration == 1.0 for s in specs))
+
+    def test_profile_nested_matrix(self):
+        doc = {"defaults": {"transport": "rfcomm", "transport_opts": {"adapter": "hci0"}},
+               "tests": [{"name": "sec", "matrix": {"transport_opts.security": ["low", "high"]}}]}
+        _, specs = expand(doc)
+        self.assertEqual([s.name for s in specs], ["sec-security=low", "sec-security=high"])
+        self.assertEqual(specs[1].transport_opts, {"adapter": "hci0", "security": "high"})
+
+    def test_shipped_profiles_load(self):
+        from ctt.profile import load_profile
+        for path in sorted((Path(__file__).resolve().parent.parent / "profiles").glob("*.yaml")):
+            name, specs = load_profile(path)
+            self.assertTrue(specs, path.name)
 
 
 class VerdictTest(unittest.TestCase):
