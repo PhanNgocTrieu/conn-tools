@@ -17,6 +17,7 @@ add_library(ctt_core STATIC
   src/i2c.cpp
   src/i2c_cmd.cpp
   src/storage_cmd.cpp
+  src/pipe_cmd.cpp
   src/transports/fd_stream.cpp
   src/transports/tcp.cpp
   src/transports/net_common.cpp

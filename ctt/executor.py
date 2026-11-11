@@ -2,18 +2,23 @@
 
 from __future__ import annotations
 
+import os
 import shlex
 import subprocess
 import tempfile
 from pathlib import Path
 
 
+# Windows GUI app: do not flash a console window for every ssh/scp call.
+NO_WINDOW = {"creationflags": 0x08000000} if os.name == "nt" else {}
+
+
 def _popen(argv: list[str], interactive: bool) -> subprocess.Popen:
     if interactive:
         return subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT, bufsize=0)
+                                stderr=subprocess.STDOUT, bufsize=0, **NO_WINDOW)
     return subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            stdin=subprocess.DEVNULL, text=True, bufsize=1)
+                            stdin=subprocess.DEVNULL, text=True, bufsize=1, **NO_WINDOW)
 
 
 class Executor:
@@ -65,10 +70,13 @@ class SshExecutor(Executor):
             "-o", "BatchMode=yes",
             "-o", "ConnectTimeout=5",
             "-o", "ServerAliveInterval=5",
-            "-o", "ControlMaster=auto",
-            "-o", f"ControlPath={control}",
-            "-o", "ControlPersist=120",
         ]
+        if os.name != "nt":   # Windows OpenSSH has no connection multiplexing
+            self.opts += [
+                "-o", "ControlMaster=auto",
+                "-o", f"ControlPath={control}",
+                "-o", "ControlPersist=120",
+            ]
         if port:
             self.opts += ["-p", str(port)]
         for o in extra_opts or []:
@@ -89,12 +97,14 @@ class SshExecutor(Executor):
 
     def run(self, argv, timeout=30):
         cmd = argv if isinstance(argv, str) else shlex.join(argv)
-        return subprocess.run(self._ssh(cmd), capture_output=True, text=True, timeout=timeout)
+        return subprocess.run(self._ssh(cmd), capture_output=True, text=True, timeout=timeout,
+                              stdin=subprocess.DEVNULL, **NO_WINDOW)
 
     def put(self, local: str, remote: str, timeout: float = 120) -> None:
         opts = [o if o != "-p" else "-P" for o in self.opts]  # scp uses -P for the port
         cmd = ["scp", "-O", "-q", *opts, local, f"{self.target}:{remote}"]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
+                           stdin=subprocess.DEVNULL, **NO_WINDOW)
         if r.returncode != 0:
             raise RuntimeError(f"scp failed: {r.stderr.strip()}")
 

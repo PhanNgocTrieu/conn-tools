@@ -1,0 +1,8 @@
+# ctt-bt desktop app (ctt/btapp). Tkinter ships with Python on Windows;
+# on WSL/Ubuntu install it with `sudo apt install python3-tk`.
+# Windows Bluetooth discovery/pairing (WinRT projection):
+winrt-runtime>=2.0; sys_platform == "win32"
+winrt-Windows.Devices.Bluetooth>=2.0; sys_platform == "win32"
+winrt-Windows.Devices.Enumeration>=2.0; sys_platform == "win32"
+winrt-Windows.Foundation>=2.0; sys_platform == "win32"
+winrt-Windows.Foundation.Collections>=2.0; sys_platform == "win32"

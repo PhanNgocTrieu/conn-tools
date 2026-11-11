@@ -72,6 +72,7 @@ void print_usage(FILE* f) {
         "  ctt-agent client -e ENDPOINT [options]     run a test against a server\n"
         "  ctt-agent i2c --bus N --addr 0xNN --step ...  I2C device test (MFi CP; see i2c --help)\n"
         "  ctt-agent storage --path FILE [--size 256M]   block-device throughput (USB storage)\n"
+        "  ctt-agent pipe [-t rfcomm] [-e /CH]           raw link relay: stdin hex <-> JSON lines\n"
         "  ctt-agent list-transports | version | help\n"
         "\n"
         "Common options:\n"

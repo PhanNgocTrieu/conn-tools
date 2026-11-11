@@ -47,5 +47,6 @@ std::string to_hex(const uint8_t* p, size_t n);
 
 int run_i2c_command(int argc, char** argv);      // `ctt-agent i2c ...`
 int run_storage_command(int argc, char** argv);  // `ctt-agent storage ...`
+int run_pipe_command(int argc, char** argv);     // `ctt-agent pipe ...` (raw link relay)
 
 }  // namespace ctt

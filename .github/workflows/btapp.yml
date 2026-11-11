@@ -1,0 +1,79 @@
+name: ctt-bt app
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  agent-aarch64:
+    name: ctt-agent for the board (aarch64, static)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y g++-aarch64-linux-gnu cmake ninja-build
+      - run: scripts/build-dut.sh --generic --static --strip
+      - run: file build/dut/agent/ctt-agent
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ctt-agent-aarch64
+          path: build/dut/agent/ctt-agent
+
+  linux-tests:
+    name: host build + all tests (Linux)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y cmake ninja-build python3-yaml python3-tk xvfb
+      - run: scripts/build-host.sh
+      - name: GUI smoke test (Xvfb)
+        run: CTT_BT_SMOKE=1 xvfb-run -a python3 -m ctt.btapp
+
+  windows-exe:
+    name: ctt-bt.exe (Windows)
+    needs: agent-aarch64
+    runs-on: windows-latest
+    permissions:
+      contents: write   # attach ctt-bt.exe to tagged releases
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: ctt-agent-aarch64
+          path: dist/agent
+      - run: python -m pip install --upgrade pip pyinstaller pillow -r requirements-btapp.txt
+      - name: Windows Bluetooth API probe
+        run: |
+          python -c "import socket; assert hasattr(socket, 'AF_BLUETOOTH') and hasattr(socket, 'BTPROTO_RFCOMM'), 'no RFCOMM sockets'; print('RFCOMM socket support OK')"
+          python -c "from winrt.windows.devices.bluetooth import BluetoothDevice; from winrt.windows.devices.enumeration import DeviceInformation, DevicePairingKinds; print('selector', BluetoothDevice.get_device_selector_from_pairing_state(False)[:80]); print('pairing kinds', DevicePairingKinds.CONFIRM_ONLY | DevicePairingKinds.CONFIRM_PIN_MATCH)"
+      - name: Unit tests that run on Windows
+        run: python -m unittest tests.test_btapp.BoardHelpersTest tests.test_btapp.CtpClientTest.test_pattern_crc -v
+      - name: GUI smoke test (window + screenshot)
+        env:
+          CTT_BT_SMOKE: smoke.png
+        run: python -m ctt.btapp
+      - name: Build exe
+        run: python -m PyInstaller --noconfirm --onefile --windowed --name ctt-bt --paths . --collect-all winrt --hidden-import ctt.btapp.gui --hidden-import ctt.fw --hidden-import ctt.bt --add-data "dist/agent/ctt-agent;agent" packaging/ctt_bt_main.py
+      - name: Exe smoke test
+        shell: pwsh
+        run: |
+          $env:CTT_BT_SMOKE = "1"
+          $p = Start-Process dist\ctt-bt.exe -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "ctt-bt.exe exited with $($p.ExitCode)" }
+          Get-Item dist\ctt-bt.exe | Select-Object Name, Length
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ctt-bt-windows
+          path: |
+            dist/ctt-bt.exe
+            smoke.png
+      - name: Release (tags)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/ctt-bt.exe

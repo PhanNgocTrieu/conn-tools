@@ -1,0 +1,16 @@
+[Unit]
+Description=CTT agent: Bluetooth RFCOMM throughput endpoint (channel 22)
+Documentation=https://github.com/PhanNgocTrieu/conn-tools
+After=bluetooth.service
+Wants=bluetooth.service
+
+[Service]
+# Serves one CTP session after another for the ctt-bt app on the PC
+# (ctt-bt run --addr <board BT address> --channel 22). Channel 22 stays clear of
+# the low channels used by BlueZ profiles and iAP2.
+ExecStart=/usr/bin/ctt-agent server -t rfcomm -e /22 -i 0 --timeout 30
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

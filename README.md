@@ -18,6 +18,10 @@ python3 -m ctt ui --dut root@<dut-ip>   # giao diện web: mở http://localhost
 
 Giao diện web chỉ gọi lại các lệnh `ctt` và hiện đúng dòng lệnh tương ứng, nên chạy bằng giao diện hay CLI đều cho cùng kết quả. Server chỉ lắng nghe trên `127.0.0.1` và không có đăng nhập.
 
+## App Bluetooth (ctt-bt)
+
+App desktop để test throughput Bluetooth PC ↔ board: pair, đo các chiều kèm biểu đồ, và terminal hai chiều. Chạy được dưới dạng `.exe` trên Windows (build bằng GitHub Actions) hoặc `python3 -m ctt.btapp` trong WSL. Hướng dẫn: [docs/btapp.md](docs/btapp.md).
+
 ## Firmware vendor trên DUT
 
 Image sản phẩm chạy sẵn `usb-daemon`, `bt-daemon` và `wifi-daemon`. Các daemon này đang giữ cổng USB, agent pairing BlueZ và mode WiFi. CTT làm việc với chúng như sau:
