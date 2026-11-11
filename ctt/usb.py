@@ -19,10 +19,14 @@ done
 """
 
 
-def gadget(ex: Executor, action: str, ncm: bool = False, timeout: float = 30):
-    """Runs scripts/dut-usb-gadget.sh ACTION on the DUT (script is streamed, not copied)."""
+def gadget(ex: Executor, action: str, ncm: bool = False, keep_fw: bool = False,
+           timeout: float = 30):
+    """Runs scripts/dut-usb-gadget.sh ACTION on the DUT (script is streamed, not copied).
+
+    On the vendor image `up` stops usb-daemon and switches the dwc2 port to device;
+    `down` undoes both. keep_fw=True refuses instead of stopping usb-daemon."""
     script = GADGET_SCRIPT.read_text()
-    args = [action] + (["--ncm"] if ncm and action == "up" else [])
+    args = [action] + (["--ncm"] if ncm and action == "up" else []) + (["--keep-fw"] if keep_fw else [])
     return ex.run(["sh", "-c", script, "dut-usb-gadget.sh", *args], timeout=timeout)
 
 

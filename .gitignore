@@ -1,4 +1,5 @@
 build/
+recipes-project
 out/
 compile_commands.json
 __pycache__/

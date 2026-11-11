@@ -14,3 +14,6 @@ ctt = "ctt.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["ctt*"]
+
+[tool.setuptools.package-data]
+ctt = ["ui_static/*"]

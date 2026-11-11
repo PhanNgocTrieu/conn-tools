@@ -23,9 +23,9 @@ section network;    (ip -br addr 2>/dev/null || ifconfig -a) | head -30
 section wifi;       (iw dev 2>/dev/null; for i in $(ls /sys/class/net); do [ -d /sys/class/net/$i/wireless ] && iw dev $i link 2>/dev/null; done) | head -30
 section bluetooth;  (hciconfig -a 2>/dev/null || btmgmt info 2>/dev/null || ls /sys/class/bluetooth) | head -30
 section bt-kernel;  grep -E 'bluetooth|rfcomm|l2cap|btusb|hci_uart' /proc/modules 2>/dev/null; ls /proc/net/rfcomm* 2>/dev/null; (command -v bluetoothd || ls /usr/libexec/bluetooth/bluetoothd) 2>/dev/null
-section usb;        (lsusb 2>/dev/null || ls /sys/bus/usb/devices) | head -30; echo "UDC (device/gadget controllers):"; ls /sys/class/udc 2>/dev/null; for r in /sys/class/usb_role/*/role; do [ -f "$r" ] && echo "$r: $(cat $r)"; done
+section usb;        (lsusb 2>/dev/null || ls /sys/bus/usb/devices) | head -30; echo "UDC (device/gadget controllers):"; ls /sys/class/udc 2>/dev/null; for r in /sys/class/usb_role/*/role /sys/bus/platform/devices/*/dwc2_drdmode; do [ -f "$r" ] && echo "$r: $(cat $r)"; done
 section i2c;        ls /dev/i2c-* 2>/dev/null; (command -v i2cdetect >/dev/null && echo 'i2c-tools: present' || echo 'i2c-tools: missing')
-section tools;      for t in iperf3 bluetoothctl btmgmt sdptool rfcomm iw wpa_cli hostapd i2cdetect python3 gdbserver; do printf '%-14s %s\n' $t "$(command -v $t || echo -)"; done
+section tools;      for t in busctl iperf3 bluetoothctl btmgmt sdptool rfcomm iw wpa_cli hostapd i2cdetect python3 gdbserver; do printf '%-14s %s\n' $t "$(command -v $t || echo -)"; done
 section ctt-agent;  for p in /tmp/ctt-agent /usr/bin/ctt-agent; do [ -x $p ] && $p version; done
 """
 
@@ -109,8 +109,18 @@ def _make_runner(args) -> tuple[Runner, object]:
     return runner, dut
 
 
+def _fw_preflight(dut, transports: set[str], bt_pairing: bool = False) -> None:
+    """Warns when a test would collide with the vendor firmware daemons on the DUT."""
+    if isinstance(dut, LocalExecutor) or os.environ.get("CTT_NO_FW_CHECK"):
+        return
+    from ctt import fw
+    for w in fw.warnings_for(fw.status(dut), transports, bt_pairing):
+        print(color(f"warning: {w}", "33"), file=sys.stderr)
+
+
 def _run_specs(args, run_name: str, specs: list[TestSpec]) -> int:
     runner, dut = _make_runner(args)
+    _fw_preflight(dut, {s.transport for s in specs})
     report = ReportWriter(args.out, run_name)
     results = []
     for i, spec in enumerate(specs, 1):
@@ -190,9 +200,14 @@ def cmd_deploy(args) -> int:
 
 
 def cmd_dut_info(args) -> int:
+    from ctt import fw
     dut = make_executor(args.dut, args.ssh_port, args.ssh_opt)
     r = dut.run(["sh", "-c", DUT_INFO_SCRIPT], timeout=60)
     print(r.stdout)
+    st = fw.status(dut)
+    if fw.has_vendor_firmware(st):
+        print("\n### firmware (vendor connectivity daemons)")
+        print(fw.format_status(st))
     if r.returncode != 0 and r.stderr.strip():
         print(r.stderr, file=sys.stderr)
     return r.returncode
@@ -301,10 +316,29 @@ def cmd_bt(args) -> int:
         return 0
 
     # pair / pair-stress: host initiates, DUT optionally auto-accepts
-    peer = _bt_peer(args)
     dut_ctl = None
+    bm = None
+    if args.dut_accept:
+        from ctt import fw
+        dut_ex = make_executor(args.dut, args.ssh_port, args.ssh_opt)
+        mode = args.dut_accept
+        if mode == "auto":
+            st = fw.status(dut_ex) if not isinstance(dut_ex, LocalExecutor) else {}
+            mode = "bm" if fw.active(st, "bt-daemon") else "bluetoothctl"
+            for w in fw.warnings_for(st, set(), bt_pairing=True):
+                if "default BlueZ agent" not in w:
+                    print(color(f"warning: {w}", "33"), file=sys.stderr)
+        if mode == "bm" and not args.addr:
+            addr = fw.vendor_call(dut_ex, "GetLocalAddress").split('"')
+            if len(addr) >= 4:
+                args.addr = addr[3]
+                print(f"DUT controller (bt-daemon): {args.addr}")
+    peer = _bt_peer(args)
     try:
-        if args.dut_accept:
+        if args.dut_accept and mode == "bm":
+            bm = fw.VendorAcceptor(dut_ex).__enter__()
+            print("DUT: bt-daemon pairable + discoverable, confirming pairing requests")
+        elif args.dut_accept:
             dut_ctl = _bt_ctl(args, "dut")
             prepare_acceptor(dut_ctl, "NoInputNoOutput")
             print("DUT: agent registered, pairable + discoverable")
@@ -346,6 +380,9 @@ def cmd_bt(args) -> int:
     finally:
         if dut_ctl:
             dut_ctl.close()
+        if bm:
+            bm.close()
+            print(f"DUT: bt-daemon confirmed {bm.confirmed} pairing request(s)")
 
 
 def _add_bt_parser(sub) -> None:
@@ -388,8 +425,11 @@ def _add_bt_parser(sub) -> None:
         p.add_argument("--pin", default="0000", help="legacy PIN to answer with")
         p.add_argument("--passkey", default=None, help="passkey to answer with")
         p.add_argument("--no-trust", action="store_true")
-        p.add_argument("--dut-accept", action="store_true",
-                       help="run an auto-accepting agent on the DUT (BlueZ on the DUT)")
+        p.add_argument("--dut-accept", nargs="?", const="auto", default=None,
+                       choices=("auto", "bm", "bluetoothctl"),
+                       help="make the DUT accept the pairing: bm = through bt-daemon's "
+                            "D-Bus API (vendor image), bluetoothctl = own BlueZ agent; "
+                            "auto (default) picks bm when bt-daemon runs")
         p.add_argument("--scan-timeout", type=float, default=20)
         p.add_argument("--timeout", type=float, default=40, help="pairing timeout")
         if name == "pair-stress":
@@ -405,7 +445,7 @@ def cmd_usb(args) -> int:
     act = args.usb_cmd
     if act == "gadget":
         dut = make_executor(args.dut, args.ssh_port, args.ssh_opt)
-        r = usb.gadget(dut, args.action, ncm=args.ncm)
+        r = usb.gadget(dut, args.action, ncm=args.ncm, keep_fw=args.keep_fw)
         print((r.stdout + r.stderr).strip())
         return r.returncode
     if act == "list":
@@ -458,6 +498,31 @@ def cmd_usb(args) -> int:
     report.finish({"run": "usb-storage", "dut": dut.name, "ctt_version": __version__})
     print(f"report: {report.dir}")
     return 0 if verdict == "PASS" else 1
+
+
+def cmd_fw(args) -> int:
+    import json
+    from ctt import fw
+    dut = make_executor(args.dut, args.ssh_port, args.ssh_opt)
+    if args.fw_cmd == "status":
+        st = fw.status(dut)
+        print(json.dumps(st, indent=2) if args.json else fw.format_status(st))
+        return 0 if st else 1
+    if args.fw_cmd == "wifi-mode":
+        print(fw.wifi_set_mode(dut, args.mode))
+        return 0
+    if args.fw_cmd == "bt-unpair":
+        print(fw.vendor_call(dut, "RemoveDevice", "s", args.addr))
+        return 0
+    raise SystemExit(f"ctt fw: unknown command {args.fw_cmd}")
+
+
+def cmd_ui(args) -> int:
+    from ctt.ui import serve
+    if args.dut:
+        os.environ["CTT_DUT"] = args.dut
+    serve(args.host, args.port, args.out, open_browser=args.open)
+    return 0
 
 
 def cmd_report(args) -> int:
@@ -524,6 +589,8 @@ def build_parser() -> argparse.ArgumentParser:
     g = usub.add_parser("gadget", allow_abbrev=False, help="create/remove the CTT gadget on the DUT")
     g.add_argument("action", choices=("up", "down", "status", "bind"))
     g.add_argument("--ncm", action="store_true", help="also add an NCM network function (usb0)")
+    g.add_argument("--keep-fw", action="store_true",
+                   help="fail instead of stopping usb-daemon (vendor image) to take the port")
     _add_dut_args(g)
     g.set_defaults(func=cmd_usb)
     lp = usub.add_parser("list", allow_abbrev=False, help="USB devices and negotiated speed")
@@ -543,6 +610,33 @@ def build_parser() -> argparse.ArgumentParser:
     _add_dut_args(sp)
     _add_out_args(sp)
     sp.set_defaults(func=cmd_usb)
+
+    f = sub.add_parser("fw", allow_abbrev=False,
+                       help="state / control of the vendor connectivity daemons on the DUT")
+    fsub = f.add_subparsers(dest="fw_cmd", required=True)
+    fp = fsub.add_parser("status", allow_abbrev=False,
+                         help="usb-daemon / bt-daemon / wifi-daemon state")
+    fp.add_argument("--json", action="store_true")
+    _add_dut_args(fp)
+    fp.set_defaults(func=cmd_fw)
+    fp = fsub.add_parser("wifi-mode", allow_abbrev=False, help="wifi-daemon SetMode")
+    fp.add_argument("mode", choices=("sta", "ap", "p2p"))
+    _add_dut_args(fp)
+    fp.set_defaults(func=cmd_fw)
+    fp = fsub.add_parser("bt-unpair", allow_abbrev=False,
+                         help="remove a bond through bt-daemon (frees one of its 5 slots)")
+    fp.add_argument("addr", help="address or BlueZ object path")
+    _add_dut_args(fp)
+    fp.set_defaults(func=cmd_fw)
+
+    ui = sub.add_parser("ui", allow_abbrev=False, help="web interface (http://localhost:8765)")
+    ui.add_argument("--port", type=int, default=8765)
+    ui.add_argument("--host", default="127.0.0.1",
+                    help="bind address (default 127.0.0.1; the UI has no login)")
+    ui.add_argument("--dut", default=None, help="DUT pre-filled in the page (default $CTT_DUT)")
+    ui.add_argument("--open", action="store_true", help="open the page in the browser")
+    _add_out_args(ui)
+    ui.set_defaults(func=cmd_ui)
 
     rp = sub.add_parser("report", allow_abbrev=False, help="(re)build report.html + junit.xml")
     rp.add_argument("run_dir", help="out/<timestamp>_<name> directory")

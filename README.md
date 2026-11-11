@@ -13,7 +13,24 @@ Kế hoạch tổng thể: [docs/PLAN.md](docs/PLAN.md) · USB: [docs/usb.md](do
 scripts/setup-wsl.sh --install          # lần đầu
 scripts/build-host.sh                   # build và chạy unit test + loopback test
 python3 -m ctt selftest                 # tất cả các mode qua TCP loopback
+python3 -m ctt ui --dut root@<dut-ip>   # giao diện web: mở http://localhost:8765 trên Windows
 ```
+
+Giao diện web chỉ gọi lại các lệnh `ctt` và hiện đúng dòng lệnh tương ứng, nên chạy bằng giao diện hay CLI đều cho cùng kết quả. Server chỉ lắng nghe trên `127.0.0.1` và không có đăng nhập.
+
+## Firmware vendor trên DUT
+
+Image sản phẩm chạy sẵn `usb-daemon`, `bt-daemon` và `wifi-daemon`. Các daemon này đang giữ cổng USB, agent pairing BlueZ và mode WiFi. CTT làm việc với chúng như sau:
+
+```bash
+python3 -m ctt fw status                 # trạng thái daemon, WiFi mode/SSID, số bond BT, role cổng USB
+python3 -m ctt fw wifi-mode ap|sta|p2p   # wifi-daemon SetMode
+python3 -m ctt bt pair --dut-accept bm   # DUT xác nhận pairing qua bt-daemon (auto chọn sẵn)
+python3 -m ctt fw bt-unpair <addr>       # xoá bond (bt-daemon giữ tối đa 5)
+python3 -m ctt usb gadget up / down      # dừng usb-daemon + dwc2_drdmode=device / trả lại như cũ
+```
+
+Trước mỗi lần chạy `run`/`profile`, CTT cảnh báo khi test sắp giành tài nguyên với một daemon (tắt bằng `CTT_NO_FW_CHECK=1`). `--wifi` cũng chạy được khi DUT là AP: thông số lấy từ `iw station dump` của client.
 
 Chạy với DUT:
 
@@ -93,7 +110,7 @@ ctt-agent help
 
 ```
 agent/      C++ agent: CTP, transports, test modes, metrics, tests
-ctt/        Python orchestrator (CLI, SSH, runner, profile, report)
+ctt/        Python orchestrator (CLI, SSH, runner, profile, report, fw, web UI)
 profiles/   YAML test profiles
 configs/    MFi config mẫu (bản thật: *.private.yaml, không commit)
 scripts/    setup-wsl.sh, build-host.sh, build-dut.sh, usbipd-attach.ps1

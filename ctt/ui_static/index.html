@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CTT Test Console</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #1c2330; --muted: #5d6778; --line: #dfe3ea;
+  --accent: #2457d6; --accent-ink: #ffffff; --soft: #eef2fb;
+  --pass: #17803d; --fail: #c62828; --warn: #a86400; --err: #b45309;
+  --console-bg: #11151c; --console-ink: #d7dde8; --console-muted: #7f8aa0;
+  --radius: 8px; --mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1218; --panel: #171b23; --ink: #e4e8ef; --muted: #98a2b3; --line: #2a303b;
+    --accent: #5b8cff; --accent-ink: #0b1020; --soft: #1d2433;
+    --pass: #4cc574; --fail: #ff6b6b; --warn: #f0b04a; --err: #f59e0b;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1218; --panel: #171b23; --ink: #e4e8ef; --muted: #98a2b3; --line: #2a303b;
+  --accent: #5b8cff; --accent-ink: #0b1020; --soft: #1d2433;
+  --pass: #4cc574; --fail: #ff6b6b; --warn: #f0b04a; --err: #f59e0b;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+  padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+header h1 { font-size: 16px; margin: 0; white-space: nowrap; }
+header h1 small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+.dut { display: flex; gap: 6px; align-items: center; flex: 1; min-width: 260px; max-width: 520px; }
+.dut label { flex: 1; } .dut input { flex: 1; min-width: 160px; }
+.pill { font-size: 12px; padding: 3px 10px; border-radius: 99px; background: var(--soft); color: var(--muted); white-space: nowrap; }
+.pill.busy { background: var(--accent); color: var(--accent-ink); }
+.layout { display: grid; grid-template-columns: 190px minmax(0, 1fr); min-height: calc(100vh - 53px); }
+nav { border-right: 1px solid var(--line); padding: 10px 8px; background: var(--panel); }
+nav button { display: block; width: 100%; text-align: left; border: 0; background: none; color: var(--ink);
+  padding: 8px 10px; border-radius: 6px; cursor: pointer; font: inherit; }
+nav button:hover { background: var(--soft); }
+nav button.active { background: var(--soft); color: var(--accent); font-weight: 600; }
+main { padding: 16px; display: grid; grid-template-rows: auto 1fr; gap: 16px; min-width: 0; }
+section.tab { display: none; }
+section.tab.active { display: block; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px; }
+.card h2 { font-size: 15px; margin: 0 0 4px; }
+.card p.hint { color: var(--muted); margin: 0 0 12px; font-size: 13px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px 12px; }
+label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+label.check { flex-direction: row; align-items: center; gap: 6px; color: var(--ink); font-size: 13px; }
+input, select { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 6px; padding: 6px 8px; min-width: 0; }
+input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+button.btn { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  padding: 6px 14px; border-radius: 6px; cursor: pointer; }
+button.btn:hover { border-color: var(--accent); }
+button.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+button.btn.danger { color: var(--fail); }
+button.btn:disabled { opacity: .5; cursor: not-allowed; }
+.presets { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.presets button { font-size: 12px; padding: 4px 10px; }
+.console { background: var(--console-bg); color: var(--console-ink); border-radius: var(--radius);
+  display: flex; flex-direction: column; min-height: 260px; overflow: hidden; }
+.console .bar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid #263042; flex-wrap: wrap; }
+.console .cmd { font-family: var(--mono); font-size: 12px; color: var(--console-muted); flex: 1; min-width: 0;
+  overflow-wrap: anywhere; }
+.console .bar button { font: inherit; font-size: 12px; background: #1d2533; color: var(--console-ink);
+  border: 1px solid #334055; border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+.console .bar a { color: #8fb3ff; font-size: 12px; }
+.console pre { margin: 0; padding: 10px 12px; font: 12px/1.5 var(--mono); overflow: auto; flex: 1; max-height: 55vh; white-space: pre-wrap; overflow-wrap: anywhere; }
+.l-pass { color: #4cc574; font-weight: 600; } .l-fail { color: #ff6b6b; font-weight: 600; }
+.l-warn { color: #f0b04a; } .l-head { color: #8fb3ff; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; }
+.v-pass { color: var(--pass); font-weight: 600; } .v-fail { color: var(--fail); font-weight: 600; }
+.v-err { color: var(--err); font-weight: 600; }
+.tablewrap { overflow-x: auto; }
+code { font-family: var(--mono); font-size: 12px; background: var(--soft); padding: 1px 5px; border-radius: 4px; }
+ol.steps { margin: 6px 0 0; padding-left: 20px; color: var(--muted); font-size: 13px; }
+ol.steps li { margin: 2px 0; }
+@media (max-width: 760px) {
+  .layout { grid-template-columns: 1fr; }
+  nav { display: flex; overflow-x: auto; gap: 4px; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px 16px; }
+  nav button { width: auto; white-space: nowrap; }
+  main { padding: 12px 16px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>CTT<small id="ver"></small></h1>
+  <div class="dut">
+    <label style="flex-direction:row;align-items:center;gap:6px;color:var(--ink);font-size:13px">DUT
+      <input id="dut" placeholder="root@192.168.1.10 hoặc local" spellcheck="false">
+    </label>
+    <button class="btn" id="dutCheck" title="ctt fw status">Kiểm tra</button>
+  </div>
+  <span class="pill" id="state">Rảnh</span>
+</header>
+<div class="layout">
+  <nav id="nav">
+    <button data-tab="home" class="active">Tổng quan</button>
+    <button data-tab="run">Throughput / Latency</button>
+    <button data-tab="profile">Profile</button>
+    <button data-tab="wifi">WiFi</button>
+    <button data-tab="bt">Bluetooth</button>
+    <button data-tab="usb">USB</button>
+    <button data-tab="mfi">MFi</button>
+    <button data-tab="results">Kết quả</button>
+  </nav>
+  <main>
+    <div>
+      <!-- ============ HOME ============ -->
+      <section class="tab active" id="tab-home">
+        <div class="card">
+          <h2>Chuẩn bị</h2>
+          <p class="hint">Chạy lần lượt các bước sau. Bước 1 không cần DUT.</p>
+          <div class="row" style="margin-top:0">
+            <button class="btn" data-cmd='["selftest"]' data-nodut>1. Selftest (loopback trên PC)</button>
+            <button class="btn" data-cmd='["deploy"]'>2. Deploy agent lên DUT</button>
+            <button class="btn" data-cmd='["dut-info"]'>3. Thông tin DUT</button>
+            <button class="btn" data-cmd='["fw","status"]'>4. Trạng thái firmware</button>
+          </div>
+          <ol class="steps">
+            <li>Mục "Trạng thái firmware" cho biết usb-daemon, bt-daemon và wifi-daemon có đang chạy không, WiFi đang ở mode nào, BT đã bond bao nhiêu thiết bị (tối đa 5), cổng USB đang là host hay device.</li>
+            <li>Trước mỗi test, CTT tự cảnh báo (dòng màu vàng) nếu test sắp giành tài nguyên với một daemon.</li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- ============ RUN ============ -->
+      <section class="tab" id="tab-run">
+        <div class="card">
+          <h2>Đo throughput / latency</h2>
+          <p class="hint">Mặc định server chạy trên DUT: <b>tx</b> = PC→DUT, <b>rx</b> = DUT→PC, <b>bidir</b> = cả hai chiều, <b>echo</b> = RTT.</p>
+          <div class="presets" id="presets">
+            <button class="btn" data-preset="wifi-tcp">WiFi TCP</button>
+            <button class="btn" data-preset="wifi-udp">WiFi UDP 50M</button>
+            <button class="btn" data-preset="latency">Latency (echo)</button>
+            <button class="btn" data-preset="rfcomm">BT RFCOMM</button>
+            <button class="btn" data-preset="l2cap">BT L2CAP LE</button>
+            <button class="btn" data-preset="usb">USB bulk</button>
+          </div>
+          <form id="runForm" class="grid" onsubmit="return false">
+            <label>Transport <select name="transport"></select></label>
+            <label>Mode <select name="mode"></select></label>
+            <label>Thời gian <input name="duration" value="10s"></label>
+            <label>Block (payload) <input name="block" placeholder="mặc định"></label>
+            <label>Rate (bit/s) <input name="rate" placeholder="vd 50M (UDP bắt buộc)"></label>
+            <label>Server chạy ở <select name="server_side"><option>dut</option><option>host</option></select></label>
+            <label>Endpoint (-e) <input name="endpoint" placeholder="tự động"></label>
+            <label>Port / channel / PSM <input name="port" placeholder="mặc định"></label>
+            <label>BDADDR server <input name="bdaddr" placeholder="tự động"></label>
+            <label>Tên test <input name="name" placeholder="tự động"></label>
+            <label>Ghi WiFi link (iface) <input name="wifi" placeholder="trống = không ghi, auto"></label>
+            <label>Option -o (cách nhau dấu phẩy) <input name="opts" placeholder="vd type=le"></label>
+          </form>
+          <h2 style="margin-top:14px">Tiêu chí PASS</h2>
+          <div class="grid" id="expectGrid">
+            <label>up_mbps_min <input data-expect="up_mbps_min"></label>
+            <label>down_mbps_min <input data-expect="down_mbps_min"></label>
+            <label>lost_max <input data-expect="lost_max"></label>
+            <label>rtt_avg_us_max <input data-expect="rtt_avg_us_max"></label>
+            <label>rtt_p99_us_max <input data-expect="rtt_p99_us_max"></label>
+            <label>wifi_signal_dbm_min <input data-expect="wifi_signal_dbm_min"></label>
+          </div>
+          <div class="row">
+            <button class="btn primary" id="runBtn">Chạy test</button>
+            <label class="check"><input type="checkbox" id="noVerify"> Tắt kiểm tra CRC</label>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ PROFILE ============ -->
+      <section class="tab" id="tab-profile">
+        <div class="card">
+          <h2>Chạy profile YAML</h2>
+          <p class="hint">Một profile gồm nhiều test kèm tiêu chí PASS. Xem danh sách test trong profile trước khi chạy.</p>
+          <div class="grid">
+            <label>Profile <select id="profSel"></select></label>
+            <label>Ghi đè thời gian <input id="profDur" placeholder="vd 5s"></label>
+            <label>Chỉ chạy test có tên chứa <input id="profOnly"></label>
+          </div>
+          <div class="row">
+            <button class="btn" id="profList">Xem danh sách test</button>
+            <button class="btn primary" id="profRun">Chạy profile</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ WIFI ============ -->
+      <section class="tab" id="tab-wifi">
+        <div class="card">
+          <h2>Mode WiFi của DUT (wifi-daemon)</h2>
+          <p class="hint">Trên head unit, DUT thường ở chế độ <b>AP</b> (hostapd trên wlan0). Đổi mode bằng <code>Manager.SetMode</code>.</p>
+          <div class="row" style="margin-top:0">
+            <button class="btn" data-cmd='["fw","wifi-mode","ap"]'>AP</button>
+            <button class="btn" data-cmd='["fw","wifi-mode","sta"]'>STA</button>
+            <button class="btn" data-cmd='["fw","wifi-mode","p2p"]'>P2P</button>
+            <button class="btn" data-cmd='["fw","status"]'>Xem SSID / passphrase / kênh</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Đo WiFi khi DUT là AP</h2>
+          <ol class="steps">
+            <li>Bấm "Xem SSID / passphrase / kênh", rồi cho PC (hoặc USB WiFi dongle gắn vào WSL) kết nối vào AP đó.</li>
+            <li>Ở ô DUT phía trên, nhập IP của DUT trên mạng AP (đi qua WiFi), hoặc giữ SSH qua Ethernet và nhập endpoint là IP AP.</li>
+            <li>Sang tab Throughput, bấm preset "WiFi TCP". Trong ô "Ghi WiFi link" nhập <code>wlan0</code> để ghi RSSI và bitrate của client, đo từ phía DUT.</li>
+          </ol>
+          <div class="row"><button class="btn primary" data-cmd='["profile","profiles/wifi_tcp_throughput.yaml"]'>Chạy profile WiFi TCP</button>
+          <button class="btn" data-cmd='["profile","profiles/wifi_udp.yaml"]'>Chạy profile WiFi UDP</button></div>
+        </div>
+      </section>
+
+      <!-- ============ BT ============ -->
+      <section class="tab" id="tab-bt">
+        <div class="card">
+          <h2>Pairing</h2>
+          <p class="hint">PC (dongle) chủ động pair tới DUT. Khi DUT chạy bt-daemon, chọn <b>bm</b> (hoặc auto): CTT sẽ xác nhận pairing qua D-Bus của bt-daemon thay vì đăng ký agent riêng.</p>
+          <div class="grid">
+            <label>DUT tự chấp nhận <select id="btAccept"><option value="auto">auto</option><option value="bm">bm (bt-daemon)</option><option value="bluetoothctl">bluetoothctl</option><option value="">không (xác nhận tay)</option></select></label>
+            <label>Địa chỉ DUT <input id="btAddr" placeholder="tự lấy qua SSH"></label>
+            <label>Số lần (stress) <input id="btN" value="20"></label>
+            <label>Tỉ lệ thành công tối thiểu <input id="btRate" value="0.98"></label>
+            <label class="check" style="align-self:end"><input type="checkbox" id="btConnect" checked> connect sau khi pair</label>
+          </div>
+          <div class="row">
+            <button class="btn" id="btPair">Pair 1 lần</button>
+            <button class="btn primary" id="btStress">Pair stress</button>
+            <button class="btn" data-cmd='["bt","scan","-t","10"]' data-nodut>Scan từ PC</button>
+            <button class="btn" data-cmd='["bt","list"]' data-nodut>Controller của PC</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Bond trên DUT</h2>
+          <p class="hint">bt-daemon giữ tối đa 5 bond. Khi đã đủ 5, các lần pair mới bị lỗi <code>CapacityReached</code>.</p>
+          <div class="grid"><label>Địa chỉ cần xoá <input id="btRm" placeholder="AA:BB:CC:DD:EE:FF"></label></div>
+          <div class="row"><button class="btn danger" id="btUnpair">Xoá bond (bt-daemon)</button>
+          <button class="btn" data-cmd='["fw","status"]'>Xem số bond</button></div>
+        </div>
+        <div class="card">
+          <h2>Throughput BT</h2>
+          <div class="row" style="margin-top:0">
+            <button class="btn primary" data-cmd='["profile","profiles/bt_rfcomm_throughput.yaml"]'>Profile RFCOMM</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ USB ============ -->
+      <section class="tab" id="tab-usb">
+        <div class="card">
+          <h2>Gadget USB trên DUT</h2>
+          <p class="hint"><b>Lên</b>: dừng usb-daemon, chuyển <code>dwc2_drdmode</code> sang device, rồi tạo gadget CTT. <b>Xuống</b>: trả cổng về host và chạy lại usb-daemon. <b>Luôn bấm Xuống sau khi test xong.</b></p>
+          <div class="row" style="margin-top:0">
+            <button class="btn" data-cmd='["usb","gadget","status"]'>Trạng thái</button>
+            <button class="btn primary" data-cmd='["usb","gadget","up"]'>Lên (bulk)</button>
+            <button class="btn" data-cmd='["usb","gadget","up","--ncm"]'>Lên (bulk + NCM)</button>
+            <button class="btn danger" data-cmd='["usb","gadget","down"]'>Xuống (trả lại usb-daemon)</button>
+          </div>
+          <div class="row">
+            <button class="btn" data-cmd='["profile","profiles/usb_bulk.yaml"]'>Profile USB bulk</button>
+            <button class="btn" data-cmd='["usb","list","--side","dut"]'>Thiết bị USB trên DUT</button>
+            <button class="btn" data-cmd='["usb","list","--side","host"]' data-nodut>Thiết bị USB trên PC</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2>USB storage (DUT là host)</h2>
+          <div class="grid">
+            <label>File test trên thiết bị <input id="stPath" placeholder="/run/media/sda1/ctt.bin"></label>
+            <label>Kích thước <input id="stSize" value="256M"></label>
+            <label>Block <input id="stBlock" value="1M"></label>
+            <label>write_MBps_min <input id="stW"></label>
+            <label>read_MBps_min <input id="stR"></label>
+          </div>
+          <div class="row"><button class="btn primary" id="stRun">Chạy storage test</button></div>
+        </div>
+      </section>
+
+      <!-- ============ MFI ============ -->
+      <section class="tab" id="tab-mfi">
+        <div class="card">
+          <h2>MFi coprocessor (I2C)</h2>
+          <p class="hint">Trên board vendor: <code>/dev/i2c-1</code>, địa chỉ <code>0x10</code>. File example chạy trên bus giả lập; với chip thật, copy thành <code>configs/mfi_cp.private.yaml</code> rồi điền register map.</p>
+          <div class="grid">
+            <label>Config <select id="mfiSel"></select></label>
+            <label>Hệ số số lần lặp <input id="mfiScale" value="1"></label>
+          </div>
+          <div class="row"><button class="btn primary" id="mfiRun">Chạy</button></div>
+        </div>
+      </section>
+
+      <!-- ============ RESULTS ============ -->
+      <section class="tab" id="tab-results">
+        <div class="card">
+          <h2>Các lần chạy</h2>
+          <p class="hint">Chọn một lần chạy làm <b>chuẩn</b> và một lần làm <b>mới</b> để so sánh regression.</p>
+          <div class="row" style="margin-top:0">
+            <button class="btn" id="refreshRuns">Làm mới</button>
+            <label>Ngưỡng % <input id="tol" value="10" style="width:70px"></label>
+            <button class="btn primary" id="cmpBtn">So sánh</button>
+          </div>
+          <div class="tablewrap" style="margin-top:10px">
+            <table><thead><tr><th>Chuẩn</th><th>Mới</th><th>Thời điểm / tên</th><th>Kết quả</th><th>Test</th><th></th></tr></thead>
+            <tbody id="runsBody"></tbody></table>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="console" aria-live="polite">
+      <div class="bar">
+        <span class="cmd" id="cmdLine">Chưa chạy lệnh nào. Mỗi nút trên đây chạy một lệnh <code style="background:#1d2533;color:inherit">python3 -m ctt …</code></span>
+        <a id="reportLink" target="_blank" hidden>Mở report</a>
+        <button id="copyCmd">Copy lệnh</button>
+        <button id="stopBtn" disabled>Dừng</button>
+        <button id="clearBtn">Xoá</button>
+      </div>
+      <pre id="out"></pre>
+    </div>
+  </main>
+</div>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const store = {
+  get(k, d) { try { return localStorage.getItem("ctt." + k) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("ctt." + k, v); } catch {} },
+};
+let cfg = {}, job = null, poll = null, lastCmd = "";
+const NO_DUT = new Set(["selftest", "report", "compare"]);
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify(body) } : {});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+function dutArgs(argv, noDut) {
+  const d = $("#dut").value.trim();
+  if (noDut || NO_DUT.has(argv[0]) || !d) return argv;
+  return [...argv, "--dut", d];
+}
+const shq = a => /^[\w@%+=:,./-]+$/.test(a) ? a : "'" + a.replace(/'/g, "'\\''") + "'";
+
+async function run(argv, noDut) {
+  argv = dutArgs(argv, noDut);
+  lastCmd = "python3 -m ctt " + argv.map(shq).join(" ");
+  $("#cmdLine").textContent = "$ " + lastCmd;
+  $("#reportLink").hidden = true;
+  try {
+    job = await api("/api/jobs", { argv });
+  } catch (e) {
+    append([`! ${e.message}`], "l-fail");
+    return;
+  }
+  $("#out").textContent = "";
+  setBusy(true);
+  pollJob(0);
+}
+
+function classify(line) {
+  if (/\bPASS\b/.test(line) && !/FAIL/.test(line)) return "l-pass";
+  if (/\b(FAIL|ERROR)\b|^ctt: |error:/i.test(line)) return "l-fail";
+  if (/^warning:|\[warn\]/i.test(line)) return "l-warn";
+  if (/^\[\d+\/\d+\]|^###|^== /.test(line)) return "l-head";
+  return "";
+}
+function append(lines, forced) {
+  const out = $("#out"), atEnd = out.scrollTop + out.clientHeight >= out.scrollHeight - 30;
+  const frag = document.createDocumentFragment();
+  for (const l of lines) {
+    const span = document.createElement("span");
+    const c = forced || classify(l);
+    if (c) span.className = c;
+    span.textContent = l + "\n";
+    frag.appendChild(span);
+  }
+  out.appendChild(frag);
+  if (atEnd) out.scrollTop = out.scrollHeight;
+}
+
+function pollJob(since) {
+  clearTimeout(poll);
+  poll = setTimeout(async () => {
+    let j;
+    try { j = await api(`/api/jobs/${job.id}?since=${since}`); }
+    catch (e) { append([`! ${e.message}`], "l-fail"); setBusy(false); return; }
+    if (j.lines.length) append(j.lines);
+    if (j.run_dir) {
+      const a = $("#reportLink");
+      a.href = `/out/${encodeURIComponent(j.run_dir)}/report.html`;
+      a.hidden = false;
+    }
+    if (j.running) return pollJob(j.next);
+    append([`— kết thúc (exit ${j.rc}${j.rc === 0 ? ", OK" : ""}) sau ${(j.ended - j.started).toFixed(1)} s`],
+           j.rc === 0 ? "l-pass" : "l-fail");
+    setBusy(false);
+    loadRuns();
+  }, since === 0 ? 150 : 500);
+}
+
+function setBusy(b) {
+  $("#stopBtn").disabled = !b;
+  const s = $("#state");
+  s.textContent = b ? "Đang chạy…" : "Rảnh";
+  s.classList.toggle("busy", b);
+}
+
+// ---------- tabs ----------
+function showTab(name) {
+  $$("#nav button").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+  $$("section.tab").forEach(s => s.classList.toggle("active", s.id === "tab-" + name));
+  store.set("tab", name);
+  if (name === "results") loadRuns();
+}
+$("#nav").addEventListener("click", e => { if (e.target.dataset.tab) showTab(e.target.dataset.tab); });
+
+// ---------- generic buttons ----------
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-cmd]");
+  if (b) run(JSON.parse(b.dataset.cmd), b.hasAttribute("data-nodut"));
+});
+$("#dutCheck").onclick = () => run(["fw", "status"]);
+$("#dut").addEventListener("change", () => store.set("dut", $("#dut").value.trim()));
+$("#stopBtn").onclick = () => job && api(`/api/jobs/${job.id}/stop`, {}).catch(() => {});
+$("#clearBtn").onclick = () => { $("#out").textContent = ""; };
+$("#copyCmd").onclick = () => lastCmd && navigator.clipboard?.writeText(lastCmd);
+
+// ---------- run form ----------
+const PRESETS = {
+  "wifi-tcp": { transport: "tcp", mode: "bidir", duration: "30s", wifi: "auto", rate: "", block: "", opts: "" },
+  "wifi-udp": { transport: "udp", mode: "tx", duration: "30s", rate: "50M", wifi: "auto", block: "", opts: "" },
+  "latency":  { transport: "tcp", mode: "echo", duration: "10s", rate: "", block: "64", opts: "" },
+  "rfcomm":   { transport: "rfcomm", mode: "bidir", duration: "30s", rate: "", wifi: "", block: "", opts: "" },
+  "l2cap":    { transport: "l2cap", mode: "tx", duration: "30s", rate: "", wifi: "", block: "", opts: "type=le" },
+  "usb":      { transport: "usb", mode: "bidir", duration: "30s", rate: "", wifi: "", block: "", opts: "udc=auto" },
+};
+$("#presets").addEventListener("click", e => {
+  const p = PRESETS[e.target.dataset.preset];
+  if (!p) return;
+  const f = $("#runForm");
+  for (const [k, v] of Object.entries(p)) if (f.elements[k]) f.elements[k].value = v;
+  if (e.target.dataset.preset === "usb")
+    append(["warning: USB bulk cần gadget đang ở trạng thái lên: tab USB → \"Lên (bulk)\"."], "l-warn");
+});
+$("#runBtn").onclick = () => {
+  const f = $("#runForm").elements, a = ["run", "-t", f.transport.value, "-m", f.mode.value];
+  const opt = (flag, v) => { v = (v || "").trim(); if (v) a.push(flag, v); };
+  opt("-d", f.duration.value); opt("-b", f.block.value); opt("-r", f.rate.value);
+  if (f.server_side.value !== "dut") a.push("--server-side", f.server_side.value);
+  opt("-e", f.endpoint.value); opt("--port", f.port.value); opt("--bdaddr", f.bdaddr.value);
+  opt("--name", f.name.value); opt("--wifi", f.wifi.value);
+  for (const o of f.opts.value.split(",").map(s => s.trim()).filter(Boolean)) a.push("-o", o);
+  for (const i of $$("#expectGrid input")) if (i.value.trim()) a.push("--expect", `${i.dataset.expect}=${i.value.trim()}`);
+  if ($("#noVerify").checked) a.push("--no-verify");
+  run(a);
+};
+
+// ---------- profile ----------
+function profArgs(extra) {
+  const a = ["profile", $("#profSel").value, ...extra];
+  if ($("#profDur").value.trim()) a.push("-d", $("#profDur").value.trim());
+  if ($("#profOnly").value.trim()) a.push("--only", $("#profOnly").value.trim());
+  return a;
+}
+$("#profList").onclick = () => run(profArgs(["--list"]), true);
+$("#profRun").onclick = () => run(profArgs([]));
+
+// ---------- bt ----------
+function btArgs(cmd) {
+  const a = ["bt", cmd], acc = $("#btAccept").value, addr = $("#btAddr").value.trim();
+  if (acc) a.push("--dut-accept", acc);
+  if (cmd === "pair-stress") {
+    a.push("-n", $("#btN").value.trim() || "20");
+    if ($("#btConnect").checked) a.push("--connect");
+    if ($("#btRate").value.trim()) a.push("--min-success-rate", $("#btRate").value.trim());
+  }
+  if (addr) a.push(addr);
+  return a;
+}
+$("#btPair").onclick = () => run(btArgs("pair"));
+$("#btStress").onclick = () => run(btArgs("pair-stress"));
+$("#btUnpair").onclick = () => {
+  const a = $("#btRm").value.trim();
+  if (!a) return append(["! nhập địa chỉ cần xoá"], "l-fail");
+  if (confirm(`Xoá bond ${a} trên DUT?`)) run(["fw", "bt-unpair", a]);
+};
+
+// ---------- usb storage ----------
+$("#stRun").onclick = () => {
+  const p = $("#stPath").value.trim();
+  if (!p) return append(["! nhập đường dẫn file test trên thiết bị USB"], "l-fail");
+  const a = ["usb", "storage", "--path", p, "--size", $("#stSize").value.trim() || "256M",
+             "--block", $("#stBlock").value.trim() || "1M"];
+  if ($("#stW").value.trim()) a.push("--expect", "write_MBps_min=" + $("#stW").value.trim());
+  if ($("#stR").value.trim()) a.push("--expect", "read_MBps_min=" + $("#stR").value.trim());
+  run(a);
+};
+
+// ---------- mfi ----------
+$("#mfiRun").onclick = () => run(["mfi", $("#mfiSel").value, "--repeat-scale", $("#mfiScale").value.trim() || "1"]);
+
+// ---------- results ----------
+async function loadRuns() {
+  let runs;
+  try { runs = await api("/api/runs"); } catch { return; }
+  const tb = $("#runsBody");
+  tb.textContent = "";
+  if (!runs.length) {
+    tb.innerHTML = `<tr><td colspan="6" style="color:var(--muted)">Chưa có lần chạy nào trong ${cfg.out_root || "out/"}</td></tr>`;
+    return;
+  }
+  for (const r of runs) {
+    const tr = document.createElement("tr");
+    const bad = (r.failed || 0) + (r.errors || 0);
+    const verdict = r.note ? r.note
+      : bad ? `<span class="v-fail">${r.passed} PASS · ${r.failed} FAIL${r.errors ? ` · ${r.errors} ERROR` : ""}</span>`
+            : `<span class="v-pass">${r.passed} PASS</span>`;
+    const tests = (r.tests || []).map(t =>
+      `<span class="${t.verdict === "PASS" ? "v-pass" : t.verdict === "FAIL" ? "v-fail" : "v-err"}">●</span> ${esc(t.name)}`).join("<br>");
+    tr.innerHTML = `<td><input type="radio" name="base" value="${esc(r.dir)}"></td>
+      <td><input type="radio" name="new" value="${esc(r.dir)}"></td>
+      <td><code>${esc(r.dir)}</code>${r.dut ? `<br><small style="color:var(--muted)">DUT ${esc(r.dut)}</small>` : ""}</td>
+      <td>${verdict}</td><td>${tests}</td>
+      <td>${r.html ? `<a target="_blank" href="/out/${encodeURIComponent(r.dir)}/report.html">report</a>` : ""}</td>`;
+    tb.appendChild(tr);
+  }
+}
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+$("#refreshRuns").onclick = loadRuns;
+$("#cmpBtn").onclick = () => {
+  const b = $("input[name=base]:checked"), n = $("input[name=new]:checked");
+  if (!b || !n) return append(["! chọn một lần chạy chuẩn và một lần chạy mới"], "l-fail");
+  const root = cfg.out_root.replace(/\/$/, "");
+  run(["compare", `${root}/${b.value}`, `${root}/${n.value}`, "--tolerance", $("#tol").value.trim() || "10"]);
+};
+
+// ---------- init ----------
+(async () => {
+  cfg = await api("/api/config");
+  $("#ver").textContent = "v" + cfg.version;
+  $("#dut").value = store.get("dut", cfg.dut || "");
+  const fill = (sel, items) => { for (const i of items) sel.add(new Option(i, i)); };
+  const f = $("#runForm").elements;
+  fill(f.transport, cfg.transports); fill(f.mode, cfg.modes);
+  fill($("#profSel"), cfg.profiles); fill($("#mfiSel"), cfg.mfi_configs);
+  const t = store.get("tab", "home");
+  if ($("#tab-" + t)) showTab(t);
+  const jobs = await api("/api/jobs").catch(() => []);
+  const live = jobs.find(j => j.running);
+  if (live) { job = live; $("#cmdLine").textContent = "$ python3 -m ctt " + live.argv.join(" "); setBusy(true); pollJob(0); }
+})();
+</script>
+</body>
+</html>

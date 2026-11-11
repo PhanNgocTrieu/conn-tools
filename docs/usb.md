@@ -9,6 +9,8 @@ Cách test phụ thuộc vào vai trò của cổng USB trên board. Xem bằng 
 
 Cổng OTG có thể đổi vai trò qua `/sys/class/usb_role/*/role` (`host` / `device`), tuỳ BSP của Vendor.
 
+**Image vendor:** cổng dual-role là `12340000.usb_dwc2`, đổi role bằng `/sys/bus/platform/devices/12340000.usb_dwc2/dwc2_drdmode` (đường dẫn lấy từ `role_path` trong `/etc/usb-daemon.conf`). `usb-daemon` giữ cổng ở chế độ host, và UDC **chỉ xuất hiện khi role là `device`**, nên `/sys/class/udc` trống là bình thường. `ctt usb gadget up` tự làm các bước: dừng `usb-daemon`, ghi `device`, chờ UDC, dựng gadget CTT. `ctt usb gadget down` gỡ gadget, ghi lại `host` và start lại `usb-daemon`. Những gì đã thay đổi được lưu ở `/run/ctt-usb-gadget`. Dùng `--keep-fw` nếu muốn lệnh báo lỗi thay vì dừng `usb-daemon`.
+
 ## 1. Bulk throughput: board làm gadget
 
 ```

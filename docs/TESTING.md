@@ -88,6 +88,8 @@ alias ctt="python3 -m ctt"
 | **DUT-03** | Kiểm kê stack connectivity | `ctt dut-info > dut-info.txt` | Có card mạng WiFi; có `hci0` và module `rfcomm`/`bluetooth`; liệt kê được `/dev/i2c-*` |
 | **DUT-04** | Đường TCP qua Ethernet (baseline của chính tool) | `ctt run -m bidir -d 10s` | PASS. Throughput gần tốc độ link Ethernet |
 
+| **DUT-05** | Trạng thái firmware vendor | `ctt fw status` | Ghi lại: daemon nào đang chạy, WiFi mode, số bond BT, role cổng USB |
+
 **Lưu file `dut-info.txt` cùng báo cáo.** File này ghi lại phiên bản kernel, image và tool có trên DUT tại thời điểm test.
 
 ---
@@ -146,7 +148,7 @@ WIFI=<ip-wifi-của-DUT>
 | **BT-05** | Độ ổn định pairing | `ctt bt pair-stress --dut-accept -n 50 --connect --min-success-rate 0.98` | Tỉ lệ thành công ≥ 98% (hoặc theo yêu cầu sản phẩm) |
 | **BT-06** | Xoá pairing | `ctt bt unpair <DUT-addr>` rồi `ctt bt info <DUT-addr>` | `removed`, sau đó `not known` |
 
-> `--dut-accept` chạy agent BlueZ trên DUT để tự đồng ý pairing. Nếu phần mềm BT của sản phẩm tự quản lý pairing (có UI xác nhận), **bỏ cờ này** và xác nhận trên DUT.
+> `--dut-accept` (= `auto`): nếu DUT chạy `bt-daemon`, CTT bật pairable/discoverable và trả lời `PairingConfirmationRequested` bằng `ConfirmPairing` qua D-Bus (`bm`). Agent của sản phẩm vẫn giữ nguyên, nên kết quả phản ánh đúng hành vi của sản phẩm. Nếu DUT không chạy `bt-daemon`, CTT dùng agent `bluetoothctl` riêng. `bt-daemon` chỉ giữ tối đa 5 bond: xoá bớt bằng `ctt fw bt-unpair <addr>` trước khi chạy BT-05.
 > Khi chạy BT-05, tool tự trả lời các prompt pairing ở phía host. Số và loại prompt được in ra để đối chiếu với phương thức pairing mong đợi (Just Works hay Numeric Comparison).
 
 ### C2.2 Throughput RFCOMM / L2CAP
