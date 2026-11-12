@@ -6,7 +6,8 @@
 #   scripts/build-windows.sh gui              # ctt-bt.exe only
 #   scripts/build-windows.sh console --agent build/dut/agent/ctt-agent
 #
-# Needs Python 3.10+ installed on Windows (winget install Python.Python.3.12).
+# Installs what it needs on Windows: Python 3.12 via winget (per-user) if missing, and
+# PyInstaller + winrt into a venv. --no-python-install: fail instead of installing Python.
 # PyInstaller does not work reliably from a \\wsl.localhost path, so the sources are
 # copied to %LOCALAPPDATA%\ctt-build, built there with scripts/build-btapp.ps1
 # (venv .venv-win is kept between runs), and the .exe files are copied back to dist/.
@@ -15,11 +16,13 @@ set -euo pipefail
 
 ONLY=all
 AGENT=""
+NOPY=0
 while [ $# -gt 0 ]; do
     case "$1" in
         all|gui|console) ONLY=$1 ;;
         --agent) AGENT=$2; shift ;;
-        -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
+        --no-python-install) NOPY=1 ;;
+        -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
     shift
@@ -43,6 +46,7 @@ rsync -a --delete \
     "$ROOT/" "$WORK/"
 
 ARGS=(-Only "$ONLY")
+[ "$NOPY" = 1 ] && ARGS+=(-NoPythonInstall)
 if [ -n "$AGENT" ]; then
     mkdir -p "$WORK/dist/agent"
     cp "$AGENT" "$WORK/dist/agent/ctt-agent"

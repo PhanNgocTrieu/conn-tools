@@ -45,7 +45,11 @@ scripts/build-dut.sh --generic --static --strip   # build ctt-agent cho board (a
 
 ### Build file `.exe` trên máy (không cần push)
 
-Cần Python 3.10+ cho **Windows** (`winget install Python.Python.3.12`). Lệnh `python` có sẵn trong WindowsApps chỉ là lối tắt tới Store, không dùng được. Kết quả nằm ở `dist/`.
+Script tự cài những gì còn thiếu trên Windows:
+- **Python 3.12**: cài bằng `winget`, chỉ cho user hiện tại, không cần quyền admin. Lệnh `python` có sẵn trong WindowsApps chỉ là lối tắt tới Store nên không tính. Không muốn tự cài: thêm `--no-python-install` (WSL) hoặc `-NoPythonInstall` (PowerShell).
+- **PyInstaller và `winrt`**: cài vào venv riêng `.venv-win`.
+
+Kết quả nằm ở `dist/`.
 
 | Muốn build | Từ WSL | Từ PowerShell (ở thư mục repo) |
 |---|---|---|
@@ -56,7 +60,6 @@ Cần Python 3.10+ cho **Windows** (`winget install Python.Python.3.12`). Lệnh
 - Muốn app deploy được agent lên board thì phải nhúng agent aarch64 vào: build agent trước bằng `scripts/build-dut.sh --generic --static --strip`.
   - Bản WSL tự lấy `build/dut/agent/ctt-agent`.
   - Bản PowerShell: thêm `-Agent <đường dẫn>`.
-- Script tạo venv riêng `.venv-win` nên Python hệ thống không bị đụng tới.
 - Bản WSL copy mã nguồn sang `%LOCALAPPDATA%\ctt-build` rồi build ở đó, vì PyInstaller chạy không ổn định trên đường dẫn `\\wsl.localhost`.
 - GitHub Actions cũng build cả 3 file ([.github/workflows/btapp.yml](.github/workflows/btapp.yml)).
 
