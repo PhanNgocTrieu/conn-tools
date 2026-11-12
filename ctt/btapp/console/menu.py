@@ -6,6 +6,7 @@ opened. Uses the same BtTestService and the same saved settings as the GUI.
 
 from __future__ import annotations
 
+import re
 import sys
 import threading
 from typing import Callable
@@ -20,14 +21,45 @@ from ctt.protocol.ctp import MODE_LABELS
 MODES = ("tx", "rx", "bidir", "echo")
 
 
-def ask(prompt: str, default: str = "") -> str:
+BT_ADDR_RE = re.compile(r"^([0-9A-F]{2}:){5}[0-9A-F]{2}$")
+
+
+def ask(prompt: str, default: str = "", check: Callable[[str], str | None] | None = None) -> str:
+    """Ask until the answer passes `check` (returns an error text, or None when OK)."""
     shown = f" [{default}]" if default != "" else ""
-    value = input(f"{prompt}{shown}: ").strip()
-    return value or default
+    while True:
+        value = input(f"{prompt}{shown}: ").strip() or default
+        error = check(value) if check else None
+        if not error:
+            return value
+        print(f"  -> {error}")
+
+
+def validate_board(value: str) -> str | None:
+    if "@" not in value or value.startswith("@") or value.endswith("@"):
+        return "cần dạng user@ip, ví dụ root@192.168.1.10"
+    return None
+
+
+def validate_bt_addr(value: str) -> str | None:
+    if value and not BT_ADDR_RE.match(value.upper()):
+        return "cần dạng AA:BB:CC:DD:EE:FF, hoặc để trống"
+    return None
+
+
+def required_bt_addr(value: str) -> str | None:
+    return validate_bt_addr(value) or (None if value else "cần nhập địa chỉ AA:BB:CC:DD:EE:FF")
+
+
+def validate_channel(value: str) -> str | None:
+    if value.lower() == "auto" or (value.isdigit() and 1 <= int(value) <= 30):
+        return None
+    return "cần 'auto' hoặc số từ 1 đến 30"
 
 
 def ask_yes(prompt: str, default: bool = True) -> bool:
-    v = ask(f"{prompt} (y/n)", "y" if default else "n").lower()
+    v = ask(f"{prompt} (y/n)", "y" if default else "n",
+            lambda v: None if v.lower() in ("y", "yes", "n", "no") else "trả lời y hoặc n").lower()
     return v.startswith("y")
 
 
@@ -94,9 +126,19 @@ class ConsoleMenu:
         s = self.settings
         s.no_ssh = not ask_yes("Có SSH tới board?", s.uses_ssh)
         if s.uses_ssh:
-            s.board = ask("SSH board (user@ip)", s.board)
-        s.bt_addr = ask("Địa chỉ BT của board (trống = lấy qua SSH)", s.bt_addr).upper()
-        s.channel = ask("RFCOMM channel (auto = hỏi board qua SSH; không SSH mặc định 22)", s.channel)
+            s.board = ask("SSH board (user@ip)", s.board if validate_board(s.board) is None else "",
+                          validate_board)
+            s.bt_addr = ask("Địa chỉ BT của board (trống = lấy qua SSH)",
+                            s.address() if validate_bt_addr(s.address()) is None else "",
+                            validate_bt_addr).upper()
+            s.channel = ask("RFCOMM channel (auto = hỏi board qua SSH)", s.channel, validate_channel)
+        else:
+            s.bt_addr = ask("Địa chỉ BT của board (trống = chọn sau bằng Scan / Thiết bị đã pair)",
+                            s.address() if validate_bt_addr(s.address()) is None else "",
+                            validate_bt_addr).upper()
+            ch = s.channel if str(s.channel).isdigit() else "22"
+            s.channel = ask("RFCOMM channel trên board", ch,
+                            lambda v: None if v.isdigit() and 1 <= int(v) <= 30 else "cần số từ 1 đến 30")
         self.store.save(s)
         print("Đã lưu.")
 
@@ -131,7 +173,7 @@ class ConsoleMenu:
         self._devices(self.svc.paired())
 
     def pair(self) -> None:
-        addr = ask("Địa chỉ BT của board", self.settings.address())
+        addr = ask("Địa chỉ BT của board", self.settings.address(), required_bt_addr).upper()
         accept = self.settings.uses_ssh and ask_yes("Board tự chấp nhận pairing qua SSH?", True)
         ok, msg = self.svc.pair(addr, accept, on_pin=lambda p: print(f"  Mã xác nhận: {p}"),
                                 on_log=lambda m: print(f"  {m}"))
@@ -141,7 +183,7 @@ class ConsoleMenu:
             self.store.save(self.settings)
 
     def unpair(self) -> None:
-        addr = ask("Địa chỉ cần bỏ pair", self.settings.address())
+        addr = ask("Địa chỉ cần bỏ pair", self.settings.address(), required_bt_addr).upper()
         print(self.svc.unpair(addr)[1])
 
     def throughput(self) -> None:

@@ -28,7 +28,17 @@ def build_parser(prog: str = "ctt-bt") -> argparse.ArgumentParser:
     return p
 
 
+def use_utf8_output() -> None:
+    """Windows writes to a pipe / SSH session in the ANSI code page (cp1252), which
+    turns Vietnamese text into '?'. Always write UTF-8 instead."""
+    for stream in (sys.stdout, sys.stderr):
+        enc = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
+        if stream is not None and enc != "utf8" and hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv=None, default: str = "gui", prog: str = "ctt-bt") -> int:
+    use_utf8_output()
     args = build_parser(prog).parse_args(argv)
     cmd = args.cmd or default
     if cmd == "gui":

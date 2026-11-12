@@ -31,6 +31,10 @@ done
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 command -v powershell.exe >/dev/null || { echo "powershell.exe not found: run this in WSL" >&2; exit 1; }
 [ -z "$AGENT" ] && [ -f "$ROOT/build/dut/agent/ctt-agent" ] && AGENT="$ROOT/build/dut/agent/ctt-agent"
+if [ -n "$AGENT" ]; then
+    [ -f "$AGENT" ] || { echo "agent not found: $AGENT" >&2; exit 1; }
+    AGENT=$(realpath "$AGENT")   # we cd to /mnt/c below
+fi
 
 # Run from a Windows directory so cmd/powershell do not complain about the UNC cwd.
 cd /mnt/c

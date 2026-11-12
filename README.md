@@ -44,6 +44,33 @@ python3 -m ctt selftest            # tự kiểm tra tool qua TCP loopback, khô
 scripts/build-dut.sh --generic --static --strip   # build ctt-agent cho board (aarch64)
 ```
 
+### Build tất cả bằng một lệnh
+
+```bash
+scripts/build-all.sh               # agent WSL (+ test), agent board, ctt-agent-console.exe, ctt-bt.exe
+scripts/build-all.sh --no-test     # bỏ qua test của agent WSL cho nhanh
+scripts/build-all.sh --no-windows  # không build .exe
+```
+
+Build xong, script in ra **báo cáo**, đồng thời lưu vào `dist/BUILD-REPORT.txt`. Báo cáo gồm:
+- trạng thái OK / FAIL của từng bước, kèm log ở `build/logs/<bước>.log`;
+- đường dẫn từng file kết quả (cả đường dẫn Windows), dung lượng, thời gian;
+- lệnh để chạy từng file.
+
+Mỗi file được gắn nhãn:
+- `[new]`: vừa build xong;
+- `[up to date]`: build lại nhưng không có gì thay đổi;
+- `[OLD FILE …]`: bước build file đó vừa lỗi, file đang thấy là bản cũ.
+
+Một bước lỗi không làm dừng các bước khác. Exit code là 0 chỉ khi mọi bước OK.
+
+| File | Nằm ở |
+|---|---|
+| agent cho WSL/Linux | `build/host/agent/ctt-agent` |
+| agent cho board | `build/dut/agent/ctt-agent` |
+| app console | `dist/ctt-agent-console.exe` |
+| app cửa sổ | `dist/ctt-bt.exe` |
+
 ### Build file `.exe` trên máy (không cần push)
 
 Script tự cài những gì còn thiếu trên Windows:
