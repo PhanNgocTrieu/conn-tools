@@ -111,9 +111,14 @@ jobs:
           path: out/agent
       - name: Collect assets
         run: |
+          # artifact layout keeps the common parent folder (dist/ next to smoke.png): find by name
+          find out -type f | sort
           mkdir -p assets
-          cp out/ctt-agent-console.exe out/ctt-bt.exe assets/
-          cp out/agent/ctt-agent assets/ctt-agent-aarch64
+          for f in ctt-agent-console.exe ctt-bt.exe; do
+            cp "$(find out -type f -name "$f" | head -1)" assets/
+          done
+          cp "$(find out/agent -type f -name ctt-agent | head -1)" assets/ctt-agent-aarch64
+          ls -la assets
           cd assets && sha256sum * > SHA256SUMS && cat SHA256SUMS
       - name: Tagged release
         if: startsWith(github.ref, 'refs/tags/v')
