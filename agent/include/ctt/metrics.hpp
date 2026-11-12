@@ -12,6 +12,9 @@ inline double mbps(uint64_t bytes, uint64_t ns) {
     return ns ? double(bytes) * 8.0 * 1000.0 / double(ns) : 0.0;
 }
 
+// "512 B", "51.5 KB", "1.23 MB" (1 KB = 1000 B) for human-readable traces.
+std::string human_bytes(uint64_t bytes);
+
 // Receiver-side counters. The receiver is the source of truth for throughput.
 struct RxCounters {
     uint64_t frames = 0;
@@ -65,6 +68,8 @@ private:
 // Emits periodic "interval" events from a sender or receiver loop.
 // dir:  "up" (client->server) or "down" (server->client)
 // role: "rx" or "tx" (who is measuring)
+// Each line has the interval (rate, frames, bytes) and the running totals, so a reader can
+// follow how much was sent / received so far without adding numbers up.
 class IntervalReporter {
 public:
     IntervalReporter(const char* dir, const char* role, double interval_s, uint64_t t0_ns);

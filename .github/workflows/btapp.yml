@@ -1,4 +1,4 @@
-name: ctt-bt app
+name: ctt-agent build + release
 
 on:
   push:
@@ -28,11 +28,22 @@ jobs:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y cmake ninja-build python3-yaml python3-tk xvfb
       - run: scripts/build-host.sh
+      - name: Release binary for Linux / WSL (x86_64, static, stripped)
+        run: |
+          cmake -S . -B build/rel -DCTT_BUILD_TESTS=OFF -DCTT_STATIC=ON
+          cmake --build build/rel -j"$(nproc)"
+          strip build/rel/agent/ctt-agent
+          file build/rel/agent/ctt-agent
+          build/rel/agent/ctt-agent version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ctt-agent-x86_64
+          path: build/rel/agent/ctt-agent
       - name: GUI smoke test (Xvfb)
         run: CTT_BT_SMOKE=1 xvfb-run -a python3 -m ctt.btapp
 
   windows-exe:
-    name: ctt-bt.exe + ctt-agent-console.exe (Windows)
+    name: ctt-agent.exe + ctt-agent-console.exe (Windows)
     needs: agent-aarch64
     runs-on: windows-latest
     steps:
@@ -50,7 +61,7 @@ jobs:
           python -c "import socket; assert hasattr(socket, 'AF_BLUETOOTH') and hasattr(socket, 'BTPROTO_RFCOMM'), 'no RFCOMM sockets'; print('RFCOMM socket support OK')"
           python -c "from winrt.windows.devices.bluetooth import BluetoothDevice; from winrt.windows.devices.enumeration import DeviceInformation, DevicePairingKinds; print('selector', BluetoothDevice.get_device_selector_from_pairing_state(False)[:80]); print('pairing kinds', DevicePairingKinds.CONFIRM_ONLY | DevicePairingKinds.CONFIRM_PIN_MATCH)"
       - name: Unit tests that run on Windows
-        run: python -m unittest tests.test_btapp.BoardHelpersTest tests.test_btapp.CtpClientTest.test_pattern_crc tests.test_btapp_service.SettingsTest tests.test_btapp_service.ConsoleMenuTest tests.test_btapp_expectations -v
+        run: python -m unittest tests.test_btapp.BoardHelpersTest tests.test_btapp.CtpClientTest.test_pattern_crc tests.test_btapp_service.SettingsTest tests.test_btapp_service.ConsoleMenuTest tests.test_btapp_expectations tests.test_btapp_trace.FormatTest -v
       - name: GUI smoke test (window + screenshot)
         env:
           CTT_BT_SMOKE: smoke.png
@@ -74,14 +85,14 @@ jobs:
         shell: pwsh
         run: |
           $env:CTT_BT_SMOKE = "1"
-          $p = Start-Process dist\ctt-bt.exe -PassThru -Wait
-          if ($p.ExitCode -ne 0) { throw "ctt-bt.exe exited with $($p.ExitCode)" }
-          Get-Item dist\ctt-bt.exe | Select-Object Name, Length
+          $p = Start-Process dist\ctt-agent.exe -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "ctt-agent.exe exited with $($p.ExitCode)" }
+          Get-Item dist\ctt-agent.exe | Select-Object Name, Length
       - uses: actions/upload-artifact@v4
         with:
-          name: ctt-bt-windows
+          name: ctt-agent-windows
           path: |
-            dist/ctt-bt.exe
+            dist/ctt-agent.exe
             dist/ctt-agent-console.exe
             smoke.png
       - uses: actions/upload-artifact@v4
@@ -90,7 +101,13 @@ jobs:
           path: dist/ctt-agent-console.exe
 
   # Deploy: every push to main refreshes the "latest-main" pre-release; a v* tag makes a release.
-  # Assets: ctt-agent-console.exe, ctt-bt.exe, ctt-agent-aarch64 (board), SHA256SUMS.
+  # Assets (names must differ, so the Linux binaries carry the CPU in the name):
+  #   ctt-agent-aarch64      board agent (board, static)
+  #   ctt-agent-x86_64       Linux / WSL agent (static)
+  #   ctt-agent.exe          Windows desktop app (GUI)
+  #   ctt-agent-console.exe  Windows console app (menu + sub-commands, works over SSH)
+  #   SHA256SUMS
+  # GitHub adds "Source code (zip / tar.gz)" to every release by itself.
   release:
     name: publish release (main -> latest-main, tags -> vX.Y.Z)
     needs: [agent-aarch64, linux-tests, windows-exe]
@@ -101,34 +118,56 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
+      - uses: actions/checkout@v4
+      - name: Tag matches the version in the sources
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: scripts/version.sh check "${GITHUB_REF_NAME#v}"
       - uses: actions/download-artifact@v4
         with:
-          name: ctt-bt-windows
-          path: out
+          name: ctt-agent-windows
+          path: out/windows
       - uses: actions/download-artifact@v4
         with:
           name: ctt-agent-aarch64
-          path: out/agent
+          path: out/aarch64
+      - uses: actions/download-artifact@v4
+        with:
+          name: ctt-agent-x86_64
+          path: out/x86_64
       - name: Collect assets
         run: |
           # artifact layout keeps the common parent folder (dist/ next to smoke.png): find by name
           find out -type f | sort
           mkdir -p assets
-          for f in ctt-agent-console.exe ctt-bt.exe; do
-            cp "$(find out -type f -name "$f" | head -1)" assets/
+          for f in ctt-agent-console.exe ctt-agent.exe; do
+            cp "$(find out/windows -type f -name "$f" | head -1)" assets/
           done
-          cp "$(find out/agent -type f -name ctt-agent | head -1)" assets/ctt-agent-aarch64
+          cp "$(find out/aarch64 -type f -name ctt-agent | head -1)" assets/ctt-agent-aarch64
+          cp "$(find out/x86_64 -type f -name ctt-agent | head -1)" assets/ctt-agent-x86_64
+          chmod +x assets/ctt-agent-aarch64 assets/ctt-agent-x86_64
           ls -la assets
           cd assets && sha256sum * > SHA256SUMS && cat SHA256SUMS
+      - name: Release notes header
+        run: |
+          cat > notes.md <<EOF
+          | File | Runs on |
+          |---|---|
+          | \`ctt-agent-aarch64\` | board board (copy to \`/tmp/ctt-agent\`, \`chmod +x\`) |
+          | \`ctt-agent-x86_64\` | Linux / WSL x86_64 |
+          | \`ctt-agent.exe\` | Windows, desktop app |
+          | \`ctt-agent-console.exe\` | Windows, console (also over SSH) |
+
+          Built from ${GITHUB_SHA}. Check the downloads with \`sha256sum -c SHA256SUMS\`.
+          EOF
+          cat notes.md
       - name: Tagged release
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           gh release create "$GITHUB_REF_NAME" assets/* --repo "$GITHUB_REPOSITORY" \
-            --title "CTT $GITHUB_REF_NAME" --generate-notes
+            --title "CTT $GITHUB_REF_NAME" --notes-file notes.md --generate-notes --verify-tag
       - name: Rolling pre-release of main
         if: github.ref == 'refs/heads/main'
         run: |
           gh release delete latest-main --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
           gh release create latest-main assets/* --repo "$GITHUB_REPOSITORY" --prerelease \
-            --target "$GITHUB_SHA" --title "CTT latest main (${GITHUB_SHA::7})" \
-            --notes "Built from $GITHUB_SHA. Download ctt-agent-console.exe / ctt-bt.exe (Windows) and ctt-agent-aarch64 (board). Check with SHA256SUMS."
+            --target "$GITHUB_SHA" --title "CTT latest main (${GITHUB_SHA::7})" --notes-file notes.md

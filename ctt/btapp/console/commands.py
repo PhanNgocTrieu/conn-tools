@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 
 from ctt.btapp.expectations import (LEVELS, SuiteRunner, all_ok, evaluate, load_suite, summary_lines,
                                     write_report)
-from ctt.btapp.formatting import interval_line, result_lines
+from ctt.btapp.formatting import board_event_line, interval_line, result_lines
 from ctt.btapp.service import BtTestService, ThroughputParams
 from ctt.btapp.settings import AppSettings
 from ctt.protocol.ctp import MODE_LABELS
@@ -21,9 +22,15 @@ def settings_from_args(args) -> AppSettings:
     return s
 
 
+def print_board_event(ev: dict) -> None:
+    line = board_event_line(ev)
+    if line:
+        print(line)
+
+
 def require_target(args) -> None:
     if not args.board and not args.addr:
-        raise SystemExit("ctt-bt: give --board root@<ip> or --addr <board BT address>")
+        raise SystemExit("ctt-agent: give --board root@<ip> or --addr <board BT address>")
 
 
 def cmd_run(args) -> int:
@@ -34,6 +41,7 @@ def cmd_run(args) -> int:
     try:
         r = svc.run_throughput(
             params, on_interval=lambda iv: print(interval_line(iv)), auto_deploy=True,
+            on_board_event=print_board_event,
             on_connect=lambda t: print(f"RFCOMM {t.address} channel {t.channel}: "
                                        f"{MODE_LABELS[args.mode]} {args.duration:g}s block {args.block}"))
     finally:
@@ -71,7 +79,8 @@ def cmd_suite(args) -> int:
         outcomes = runner.run(
             cases, args.level,
             on_case=lambda i, c: print(f"\n[{i}/{len(cases)}] {c.id} {c.title} ({c.duration_s:g}s)"),
-            on_interval=(lambda iv: print(interval_line(iv))) if args.verbose else None,
+            on_interval=None if args.quiet else (lambda iv: print(interval_line(iv))),
+            on_board_event=None if args.quiet else print_board_event,
             on_outcome=lambda o: print(f"  -> {'PASS' if o.ok else 'FAIL'} "
                                        + (o.error or "  ".join(c.text() for c in o.checks[3:]))),
             auto_deploy=True)
@@ -102,7 +111,7 @@ def cmd_pairing(args) -> int:
                                     no_ssh=not getattr(args, "board", None)))
     ok, msg = svc.pairing_status()
     if not ok:
-        raise SystemExit(f"ctt-bt: {msg}")
+        raise SystemExit(f"ctt-agent: {msg}")
     if args.cmd in ("scan", "paired"):
         devs = svc.scan(args.time) if args.cmd == "scan" else svc.paired()
         for d in devs:
@@ -146,7 +155,9 @@ def register(sub) -> None:
     u.add_argument("--out", default="ctt-results", help="folder for the JSON/CSV report")
     u.add_argument("--list", action="store_true", help="list the cases and expectations, run nothing")
     u.add_argument("--dump", action="store_true", help="print the suite as JSON (to edit and pass to --file)")
-    u.add_argument("-v", "--verbose", action="store_true", help="print every interval")
+    u.add_argument("-q", "--quiet", action="store_true",
+                   help="no live trace (by default: every second, sent / received so far on PC and board)")
+    u.add_argument("-v", "--verbose", action="store_true", help=argparse.SUPPRESS)  # old flag, trace is default now
     u.set_defaults(func=cmd_suite)
     t = sub.add_parser("term", help="interactive raw data both ways")
     add_link_args(t)

@@ -48,6 +48,12 @@ class Interval:
     rtt_ms: float | None = None    # echo: average RTT of the interval
     lost: int = 0
     crc_errors: int = 0
+    # running totals since the start (what the PC has sent / received so far)
+    up_bytes: int = 0
+    up_frames: int = 0
+    down_bytes: int = 0
+    down_frames: int = 0
+    echo_count: int = 0
 
 
 @dataclass
@@ -58,8 +64,9 @@ class Result:
     up_mbps: float | None = None          # goodput measured by the board (receiver)
     down_mbps: float | None = None        # goodput measured by the PC (receiver)
     up_sent_mbps: float | None = None     # what the PC pushed into the socket
-    up_bytes: int = 0
-    down_bytes: int = 0
+    up_bytes: int = 0                     # received by the board (STATS)
+    down_bytes: int = 0                   # received by the PC
+    up_sent_bytes: int = 0                # sent by the PC
     lost: int = 0
     out_of_order: int = 0
     crc_errors: int = 0
@@ -275,7 +282,9 @@ class CtpClient:
                         t=(now - t0) / 1e9,
                         up_mbps=(tx["bytes"] - last_tx) * 8 / dt / 1e6 if th else None,
                         down_mbps=(rx["bytes"] - last_rx) * 8 / dt / 1e6 if mode != "tx" else None,
-                        lost=rx["lost"], crc_errors=rx["crc"]))
+                        lost=rx["lost"], crc_errors=rx["crc"],
+                        up_bytes=tx["bytes"], up_frames=tx["frames"],
+                        down_bytes=rx["bytes"], down_frames=rx["frames"]))
                     last_t, last_tx, last_rx = now, tx["bytes"], rx["bytes"]
                 if errors:
                     raise errors[0]
@@ -319,6 +328,7 @@ class CtpClient:
 
         if th:
             res.up_sent_mbps = _mbps(tx["bytes"], tx["end"] - t0)
+            res.up_sent_bytes = tx["bytes"]
         if mode != "tx":
             res.down_bytes = rx["bytes"]
             res.down_mbps = _mbps(rx["bytes"], rx["last"] - t0)
@@ -350,7 +360,8 @@ class CtpClient:
             seq += 1
             now = _now_ns()
             if on_interval and now - last_t >= interval_s * 1e9:
-                on_interval(Interval(t=(now - t0) / 1e9, rtt_ms=sum(window) / len(window)))
+                on_interval(Interval(t=(now - t0) / 1e9, rtt_ms=sum(window) / len(window),
+                                     echo_count=len(rtts)))
                 window.clear()
                 last_t = now
             if interval_ms > 0:

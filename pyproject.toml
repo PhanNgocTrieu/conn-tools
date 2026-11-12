@@ -11,7 +11,7 @@ dependencies = ["pyyaml>=5.1"]
 
 [project.scripts]
 ctt = "ctt.cli:main"
-ctt-bt = "ctt.btapp.__main__:main"
+ctt-agent-gui = "ctt.btapp.__main__:main"   # Windows exe: ctt-agent.exe (the board binary is also ctt-agent)
 ctt-agent-console = "ctt.btapp.__main__:console_main"
 
 [tool.setuptools.packages.find]

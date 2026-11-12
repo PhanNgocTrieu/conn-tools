@@ -19,7 +19,7 @@ S = "${WORKDIR}/git"
 
 inherit cmake systemd
 
-# ctt-agent-bt.service: RFCOMM server on channel 22 for the ctt-bt app when the
+# ctt-agent-bt.service: RFCOMM server on channel 22 for ctt-agent.exe / ctt-agent-console.exe when the
 # PC has no SSH access to the board. Installed but disabled by default; enable it
 # in a test image with  SYSTEMD_AUTO_ENABLE:${PN} = "enable"  (bbappend/local.conf).
 SYSTEMD_SERVICE:${PN} = "ctt-agent-bt.service"

@@ -10,7 +10,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from ctt.btapp.expectations import all_ok, evaluate
-from ctt.btapp.formatting import mbps
+from ctt.btapp.formatting import board_event_line, human_bytes, interval_line, mbps
 from ctt.btapp.gui.context import AppContext
 from ctt.btapp.gui.widgets import DOWN, RTT, UP, MetricLabel, ThroughputChart
 from ctt.btapp.service import ThroughputParams
@@ -170,14 +170,13 @@ class ThroughputTab(ttk.Frame):
         self.btn_stop.configure(state="normal" if running else "disabled")
 
     def _on_board_event(self, ev: dict):
-        e = ev.get("event")
-        if e == "session_end":
-            self.ctx.log("Board: " + ("session finished" if ev.get("ok") else
-                                      f"session failed: {ev.get('message')}"), "board")
-        elif e in ("error", "warning"):
-            self.ctx.log(f"Board {e}: {ev.get('message')}", "board")
-        elif e == "log" and ev.get("message"):
+        """Board agent trace (SSH mode): received / sent so far, once per second."""
+        if ev.get("event") == "log" and ev.get("message"):
             self.ctx.log(f"Board: {ev['message']}", "board")
+            return
+        line = board_event_line(ev)
+        if line:
+            self.ctx.log(line.strip(), "board")
 
     def _on_interval(self, iv: Interval):
         self.chart.add(iv)
@@ -187,7 +186,16 @@ class ThroughputTab(ttk.Frame):
             self.r_down.set(f"{iv.down_mbps:.2f} Mbit/s")
         if iv.rtt_ms is not None:
             self.r_rtt.set(f"{iv.rtt_ms:.1f} ms")
-        self.r_err.configure(text=f"lost {iv.lost} · CRC errors {iv.crc_errors}")
+        totals = []
+        if iv.up_mbps is not None:
+            totals.append(f"sent {human_bytes(iv.up_bytes)} ({iv.up_frames} fr)")
+        if iv.down_mbps is not None:
+            totals.append(f"received {human_bytes(iv.down_bytes)} ({iv.down_frames} fr)")
+        if iv.rtt_ms is not None:
+            totals.append(f"{iv.echo_count} echo replies")
+        self.r_err.configure(text=" · ".join(totals + [f"lost {iv.lost}", f"CRC errors {iv.crc_errors}"]))
+        if iv.rtt_ms is None:
+            self.ctx.log(interval_line(iv).strip())
 
     def _on_fail(self, e):
         self._set_running(False)
@@ -224,7 +232,7 @@ class ThroughputTab(ttk.Frame):
         if not self.history:
             return messagebox.showinfo("Save", "No results yet.")
         p = filedialog.asksaveasfilename(defaultextension=".csv",
-                                         initialfile=time.strftime("ctt-bt-%Y%m%d-%H%M%S.csv"),
+                                         initialfile=time.strftime("ctt-agent-%Y%m%d-%H%M%S.csv"),
                                          filetypes=[("CSV", "*.csv")])
         if not p:
             return

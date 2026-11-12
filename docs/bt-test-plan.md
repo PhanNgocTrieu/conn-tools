@@ -1,7 +1,7 @@
 # Test plan Bluetooth: board ↔ PC
 
 > Phạm vi: kết nối Bluetooth Classic (RFCOMM) giữa board board và PC: pairing, kết nối, gửi/nhận dữ liệu, throughput, latency, độ ổn định.
-> Công cụ: `ctt-bt.exe` / `ctt-agent-console.exe` trên PC, `ctt-agent` trên board ([bt-app.md](bt-app.md)). Test case chi tiết: [bt-test-cases.md](bt-test-cases.md).
+> Công cụ: `ctt-agent.exe` / `ctt-agent-console.exe` trên PC, `ctt-agent` trên board ([bt-app.md](bt-app.md)). Test case chi tiết: [bt-test-cases.md](bt-test-cases.md).
 
 ## 1. Hiện trạng: hai setup
 
@@ -13,7 +13,7 @@
 | Bluetooth phía PC | USB dongle trên Local PC | USB dongle trên Client PC |
 | Điều khiển board | **SSH qua LAN** | **Chỉ UART** (không có mạng) |
 | Người test ngồi ở | Local PC | Local PC, **SSH vào Client PC** |
-| App dùng | `ctt-bt.exe` (GUI) hoặc console | `ctt-agent-console.exe` (chạy qua SSH, không có cửa sổ) |
+| App dùng | `ctt-agent.exe` (GUI) hoặc console | `ctt-agent-console.exe` (chạy qua SSH, không có cửa sổ) |
 | Kết quả phản ánh | Tool, phương pháp, phần mềm BlueZ/agent | **Sản phẩm thật** (chip, anten, firmware) |
 
 Hai điểm khác biệt quyết định cách test:
@@ -36,7 +36,7 @@ Hai điểm khác biệt quyết định cách test:
 
 ### Giai đoạn 0: Tool sẵn sàng (không cần phần cứng)
 - `scripts/build-host.sh` (unit + loopback test) và `python3 -m ctt selftest`: PASS.
-- GitHub Actions build được `ctt-bt.exe`, `ctt-agent-console.exe` và agent aarch64.
+- GitHub Actions build được `ctt-agent.exe`, `ctt-agent-console.exe` và agent aarch64.
 
 **Điều kiện qua:** toàn bộ test PASS, có đủ 3 file binary.
 
@@ -46,7 +46,7 @@ Hai điểm khác biệt quyết định cách test:
    - `btmon` trong lúc đo, ghi lại: loại gói ACL (2-DH5/3-DH5 hay DH1/DM1), RFCOMM frame size (PN), credit, `Mode Change` (sniff);
    - `hciconfig hci0` trên board: ACL MTU, packet type.
 2. **Chạy đủ bộ test case** TC-01 … TC-19 ([bt-test-cases.md](bt-test-cases.md)) bằng GUI. Lặp lại một lượt bằng console để chứng minh hai app cho cùng kết quả.
-3. **So sánh phía PC**: đo cùng dongle trên Windows (`ctt-bt.exe`) và trên Linux native (`python3 -m ctt.btapp`, hoặc `ctt run -t rfcomm`). Nếu Linux nhanh hơn rõ rệt thì giới hạn nằm ở stack Windows, không phải ở board.
+3. **So sánh phía PC**: đo cùng dongle trên Windows (`ctt-agent.exe`) và trên Linux native (`python3 -m ctt.btapp`, hoặc `ctt run -t rfcomm`). Nếu Linux nhanh hơn rõ rệt thì giới hạn nằm ở stack Windows, không phải ở board.
 4. **Ma trận block size**: 990 / 2048 / 4096 / 8192. Mỗi ô **đo 3 lần × 30 s**, ghi min/avg/max.
 
 **Điều kiện qua:** G1–G3 đạt; có bảng số tham chiếu kèm điều kiện đo; đã giải thích được giới hạn throughput (dựa vào btmon và l2ping).
@@ -74,15 +74,18 @@ Với mỗi build firmware mới, chạy lại: TC-05 (pair), `suite -l baseline
 
 ## 4. Ma trận: test case × setup × app
 
-| Nhóm | Test case | LT (GUI) | LT (console) | CT (console, UART) |
+Test case chi tiết viết cho Client Test với 2 tổ hợp: **A** = board UART + `ctt-agent-console.exe` qua SSH, **B** = board UART + `ctt-agent.exe` (GUI). Xem [bt-test-cases.md](bt-test-cases.md).
+
+| Nhóm | Test case | CT-A (UART + console) | CT-B (UART + GUI) | LT (SSH tới board) |
 |---|---|:-:|:-:|:-:|
-| Chuẩn bị | TC-01 PC Bluetooth, TC-02 kiểm tra board, TC-03 deploy | ✔ | ✔ | TC-01; TC-02/03 thay bằng UART |
-| Pairing | TC-04 scan, TC-05 pair, TC-18 bỏ pair / pair lại | ✔ | ✔ | ✔ (board xác nhận qua UART) |
-| Dữ liệu thô | TC-06 kết nối, TC-07 PC→board, TC-08 board→PC, TC-09 hex | ✔ | ✔ | ✔ (`ctt-agent pipe` chạy tay trên UART) |
+| Chuẩn bị | P-01 version, P-02 BT board, TC-01 PC Bluetooth / No SSH | ✔ | ✔ | ✔ (Check board, Deploy agent) |
+| Pairing | TC-04 scan, TC-05 pair, TC-18 bỏ pair / pair lại | ✔ (board xác nhận qua UART) | ✔ | ✔ (board tự xác nhận) |
+| Dữ liệu thô | TC-06 kết nối, TC-07 PC→board, TC-08 board→PC, TC-09 hex, TC-09b đếm đủ | ✔ (`ctt-agent pipe --text` trên UART) | ✔ | ✔ (khung Board) |
 | Throughput | TC-10 tx, TC-11 rx, TC-12 bidir, TC-14 block size | ✔ | ✔ | ✔ |
 | Latency | TC-13 echo | ✔ | ✔ | ✔ |
+| Cả bộ | TC-20 suite BT-TP-01…06 | ✔ | – | ✔ |
 | Ổn định | TC-15 dừng giữa chừng, TC-16 long run, TC-17 reconnect | ✔ | ✔ | ✔ |
-| Báo cáo | TC-19 lưu kết quả | ✔ | `--json` | `--json` |
+| Báo cáo | TC-19 lưu kết quả | `--json`, `ctt-results/` | Save results | ✔ |
 
 ## 5. Tiêu chí PASS (ngưỡng đã có trong tool, chốt lại sau Giai đoạn 1)
 
@@ -90,7 +93,7 @@ Với mỗi build firmware mới, chạy lại: TC-05 (pair), `suite -l baseline
 |---|---|
 | Toàn vẹn dữ liệu (mọi test) | mất gói = 0, lỗi CRC = 0, sai thứ tự = 0 |
 | Pairing | ≥ 98% thành công trên 50 lần (pair-stress) |
-| Throughput mỗi chiều | Level `target`: PC→board và board→PC **≥ 1.0 Mbit/s** (block 990 và 4096); `bidir` mỗi chiều **≥ 0.5 Mbit/s**. Level `baseline` (regression của LT): PC→board ≥ 0.25, board→PC ≥ 0.40 Mbit/s. Bảng đầy đủ: [bt-test-cases.md](bt-test-cases.md#d-throughput-và-latency-có-ngưỡng-mbits) |
+| Throughput mỗi chiều | Level `target`: PC→board và board→PC **≥ 1.0 Mbit/s** (block 990 và 4096); `bidir` mỗi chiều **≥ 0.5 Mbit/s**. Level `baseline` (regression của LT): PC→board ≥ 0.25, board→PC ≥ 0.40 Mbit/s. Bảng đầy đủ: [bt-test-cases.md](bt-test-cases.md#ngưỡng-pass) |
 | RTT (`echo`, block 64 B) | p99 ≤ 100 ms (`target`), ≤ 250 ms (`baseline`). Chốt lại sau Giai đoạn 1 |
 | Long run | 10 phút `bidir` không rớt kết nối; throughput không giảm quá 20% so với phút đầu |
 

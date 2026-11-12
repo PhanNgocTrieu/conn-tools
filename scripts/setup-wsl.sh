@@ -10,7 +10,7 @@ MODE=check
 
 PACKAGES=(
     build-essential cmake ninja-build pkg-config file git
-    python3 python3-yaml python3-venv python3-tk   # python3-tk: ctt-bt desktop app
+    python3 python3-yaml python3-venv python3-tk   # python3-tk: ctt-agent desktop app
     bluez bluez-tools libbluetooth-dev      # BT host side (Phase 2)
     libusb-1.0-0-dev usbutils               # USB host side (Phase 5)
     iw wireless-tools iperf3                # WiFi (Phase 4)

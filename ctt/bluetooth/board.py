@@ -96,7 +96,7 @@ class Board:
         if self._server and self._server.poll() is None and self.server_endpoint:
             return self.server_endpoint
         self.stop_server()
-        cmd = f"exec {self.agent} server -t rfcomm -e /{channel} -J -i 0.5 --timeout 30"
+        cmd = f"exec {self.agent} server -t rfcomm -e /{channel} -J -i 1 --timeout 30"
         self._server = self._spawn(cmd)
         ready = threading.Event()
         holder: dict = {}

@@ -20,8 +20,8 @@ Tài liệu viết theo cấu trúc BSP hiện tại:
 
 | Cách | Làm gì | Khi nào nên dùng |
 |---|---|---|
-| **A. Recipe trong `meta-project`** (khuyến nghị) | Thêm thư mục `meta-project/recipes-test/ctt-agent/` | Dự án giữ mọi recipe trong một layer, không phải sửa `bblayers.conf` |
-| B. Thêm layer `meta-ctt` | `bitbake-layers add-layer …/connectivity-tools/yocto/meta-ctt` | Muốn giữ tool tách khỏi layer sản phẩm, cập nhật bằng cách pull repo CTT |
+| **A. Recipe trong `meta-project`** (khuyến nghị) | Thêm thư mục `meta-project/recipes-project/ctt-agent/`, source chép kèm | Máy build công ty không truy cập được GitHub; mọi recipe nằm trong một layer, không phải sửa `bblayers.conf` |
+| B. Thêm layer `meta-ctt` | `bitbake-layers add-layer …/connectivity-tools/yocto/meta-ctt` | Chỉ dùng được khi máy build clone được repo CTT (recipe này tải bằng `git://`) |
 
 Phần dưới làm theo **cách A**. Cách B dùng đúng các file trong [yocto/meta-ctt](../yocto/meta-ctt), chỉ khác ở bước thêm layer ([yocto/meta-ctt/README.md](../yocto/meta-ctt/README.md)).
 
@@ -31,18 +31,38 @@ Phần dưới làm theo **cách A**. Cách B dùng đúng các file trong [yoct
 grep BBFILES layers/meta-project/conf/layer.conf
 ```
 
-## 2. Tạo recipe
+## 2. Tạo recipe (source nằm cạnh recipe, không tải từ git)
+
+Máy build ở công ty **không clone được repo GitHub cá nhân**, nên recipe không dùng `git://`. Source của `ctt-agent` được chép thẳng vào layer, giống cách `bt-daemon` và `usb-daemon` đang làm (`SRC_URI = "file://…"`). Bitbake không cần mạng và không cần `SRCREV`.
 
 Cấu trúc:
 
 ```
-meta-project/recipes-test/ctt-agent/
-├── ctt-agent_git.bb
+meta-project/recipes-project/ctt-agent/
+├── ctt-agent.bb
 └── files/
-    └── ctt-agent-bt.service      # chép từ connectivity-tools/yocto/meta-ctt/recipes-connectivity/ctt-agent/files/
+    ├── ctt-agent-bt.service          # server RFCOMM channel 22 (systemd)
+    └── ctt-agent/                    # source C++ (~340 KB, 51 file)
+        ├── CMakeLists.txt
+        ├── SOURCE-COMMIT             # commit connectivity-tools đã dùng để chép
+        ├── agent/{CMakeLists.txt, include/, src/}
+        └── scripts/dut-usb-gadget.sh # cài thành /usr/bin/ctt-usb-gadget
 ```
 
-`ctt-agent_git.bb` (viết theo kiểu các recipe vendor như `usb-daemon.bb`):
+**Tạo thư mục này** ở máy có repo connectivity-tools (máy cá nhân), rồi đem thư mục `ctt-agent/` lên công ty:
+
+```bash
+cd connectivity-tools
+scripts/export-recipe.sh                       # mặc định ghi vào recipes-project/ctt-agent/
+# hoặc ghi thẳng vào layer:  scripts/export-recipe.sh /path/to/layers/meta-project/recipes-project/ctt-agent
+```
+
+Script chỉ chép file, không build:
+- chép source vào `files/ctt-agent/` (xóa bản cũ trước) và chép file service;
+- ghi commit vào `SOURCE-COMMIT` (thêm `-dirty` nếu lúc chép có sửa đổi chưa commit);
+- lần đầu (thư mục chưa có `.bb`): chép recipe mẫu [yocto/recipe-local-src/ctt-agent.bb](../yocto/recipe-local-src/ctt-agent.bb). Đã có `.bb` thì không ghi đè, chỉ cập nhật dòng `PV` theo version trong `CMakeLists.txt`.
+
+`ctt-agent.bb` (bản mẫu trong repo: `yocto/recipe-local-src/ctt-agent.bb`):
 
 ```bitbake
 # =============================================================
@@ -56,15 +76,16 @@ LICENSE = "CLOSED"
 # =============================================================
 # Source
 # =============================================================
-# Repository of the tool. The commit is pinned in srcrev.inc (SRCREV_pn-ctt-agent).
-CTT_GIT_URI ??= "git://github.com/PhanNgocTrieu/conn-tools.git;protocol=https;branch=main"
+# Source kept in this layer next to the recipe (files/ctt-agent/), like bt-daemon:
+# no git fetch, no network, no SRCREV. The source commit is in files/ctt-agent/SOURCE-COMMIT.
+# Refresh it from the connectivity-tools tree with:  scripts/export-recipe.sh <this folder>
+FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 SRC_URI = " \
-    ${CTT_GIT_URI} \
+    file://ctt-agent \
     file://ctt-agent-bt.service \
 "
-SRCREV ??= "${AUTOREV}"
-PV = "0.1+git"
-S = "${WORKDIR}/git"
+PV = "0.1.0"   # = version in CMakeLists.txt; export-recipe.sh keeps it equal
+S = "${WORKDIR}/ctt-agent"
 
 # =============================================================
 # Build
@@ -79,7 +100,8 @@ EXTRA_OECMAKE = "-DCTT_BUILD_TESTS=OFF"
 # Service
 # =============================================================
 # RFCOMM server on channel 22 for ctt-bt / ctt-agent-console when the PC has no SSH to the board.
-# Installed but disabled: enable it only in test images (see step 4).
+# Installed but disabled: enable it only in test images, e.g. in local.conf
+#   SYSTEMD_AUTO_ENABLE:pn-ctt-agent = "enable"
 SYSTEMD_SERVICE:${PN} = "ctt-agent-bt.service"
 SYSTEMD_AUTO_ENABLE:${PN} ??= "disable"
 
@@ -90,6 +112,10 @@ SYSTEMD_AUTO_ENABLE:${PN} ??= "disable"
 do_install:append() {
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${WORKDIR}/ctt-agent-bt.service ${D}${systemd_system_unitdir}/
+
+    if [ ! -x ${D}${bindir}/ctt-agent ]; then
+        bbfatal "ctt-agent was not installed: ${D}${bindir}/ctt-agent"
+    fi
 }
 
 # =============================================================
@@ -105,19 +131,19 @@ RRECOMMENDS:${PN} = "kernel-module-rfcomm kernel-module-i2c-dev"
 ```
 
 Ghi chú:
-- `PV = "0.1+git"`: từ nanbield/scarthgap, fetcher tự thêm mã commit vào phiên bản, nên không cần `${SRCPV}` nữa.
-- Nếu máy build **không ra được Internet / GitHub**: đổi `CTT_GIT_URI` sang server git nội bộ (mirror của repo), hoặc dùng `externalsrc` (bước 6).
-- Recipe không đụng tới daemon vendor nào. `ctt-agent` chỉ mở socket RFCOMM của kernel trên channel 22; bt-daemon vẫn giữ adapter và pairing như bình thường.
+- **Cập nhật agent:** chạy lại `scripts/export-recipe.sh`, rồi commit thư mục `files/ctt-agent/` vào git của `meta-project`. Nếu muốn package có version mới thì tăng `PR` hoặc `PV`.
+- Recipe không đụng tới daemon vendor nào. `ctt-agent` chỉ mở socket RFCOMM của kernel trên channel 22, còn bt-daemon vẫn giữ adapter và pairing như bình thường. Service chạy sau `bt-daemon.service`.
+- Recipe chỉ cần những gì đã có sẵn trong toolchain: CMake ≥ 3.16, C++17 và pthread. Không cần thư viện ngoài nào (bluez, libusb…).
 
-## 3. Ghim phiên bản (SRCREV)
+## 3. Biết image đang chứa bản agent nào
 
-Image release phải build lại được y hệt, nên không dùng `AUTOREV`. Thêm vào `meta-project/conf/local_conf/board-sub/conf/srcrev.inc` (và `board-main` nếu cần):
+Không có `SRCREV` để ghim. Phiên bản chính là nội dung `files/ctt-agent/` đã commit trong `meta-project`. Muốn biết nó lấy từ commit nào của connectivity-tools:
 
-```bitbake
-SRCREV_pn-ctt-agent = "<commit của connectivity-tools>"
+```bash
+cat layers/meta-project/recipes-project/ctt-agent/files/ctt-agent/SOURCE-COMMIT
 ```
 
-Lấy commit bằng `git -C connectivity-tools rev-parse HEAD` (commit đã push lên repo).
+Trên board, `ctt-agent version` in ra số version (`0.1.0`).
 
 ## 4. Thêm vào image
 
@@ -192,7 +218,7 @@ scp tmp/work/*/ctt-agent/*/image/usr/bin/ctt-agent root@<board-ip>:/tmp/   # có
 
 Không có mạng thì chép bằng USB stick, xem [bt-client-test.md](bt-client-test.md) bước 1.
 
-**Sửa code CTT và build lại ngay, không qua git** (`externalsrc`). Thêm vào `build/conf/local.conf`:
+**Đang sửa code CTT và muốn build lại ngay mà không chép lại source** (`externalsrc`, dùng ở máy có repo). Thêm vào `build/conf/local.conf`:
 
 ```bitbake
 INHERIT += "externalsrc"
@@ -207,7 +233,7 @@ Hoặc dùng `devtool modify ctt-agent` (BSP có `script/devtool.sh`).
 ```sh
 ctt-agent version                         # ctt-agent 0.1.0 (CTP v1, aarch64)
 systemctl status ctt-agent-bt             # active (running) nếu đã bật ở bước 4
-journalctl -u ctt-agent-bt -n 20          # log của server RFCOMM channel 22
+journalctl -f -u ctt-agent-bt            # trace mỗi giây trong lúc test: đã nhận / đã gửi bao nhiêu
 ```
 
 Từ PC (Client PC):
@@ -223,8 +249,8 @@ ctt-agent-console.exe suite --addr <địa chỉ BT của board> --channel 22 --
 
 | Lỗi | Nguyên nhân / cách xử lý |
 |---|---|
-| `Fetcher failure … github.com` | Máy build không ra được GitHub. Đổi `CTT_GIT_URI` sang mirror nội bộ, hoặc dùng `externalsrc` |
-| `AUTOREV` lỗi khi `BB_NO_NETWORK = "1"` | Phải ghim `SRCREV_pn-ctt-agent` trong `srcrev.inc` |
+| `Unable to find file file://ctt-agent` | Thiếu thư mục `files/ctt-agent/`. Chạy `scripts/export-recipe.sh`, hoặc kiểm tra thư mục đã được commit vào `meta-project` chưa |
+| `Fetcher failure … github.com` | Đang dùng recipe `git://` (cách B). Máy công ty phải dùng cách A |
 | `Nothing PROVIDES 'ctt-agent'` | Recipe không nằm trong `BBFILES` của `meta-project`. Kiểm tra `layer.conf` và đường dẫn `recipes-*/*/*.bb` |
 | `QA Issue: … installed-vs-shipped` | Có file được cài nhưng không nằm trong `FILES:${PN}`. Thêm đường dẫn vào `FILES:${PN}` |
 | CMake báo phiên bản quá thấp | Cần CMake ≥ 3.16, scarthgap đã có sẵn |

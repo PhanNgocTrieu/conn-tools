@@ -9,7 +9,7 @@
 # Steps:
 #   1. host    ctt-agent for WSL/Linux (+ tests)     scripts/build-host.sh
 #   2. board   ctt-agent for the board (aarch64)   scripts/build-dut.sh --generic --static --strip
-#   3. exe     ctt-agent-console.exe + ctt-bt.exe    scripts/build-windows.sh (embeds the board agent)
+#   3. exe     ctt-agent-console.exe + ctt-agent.exe    scripts/build-windows.sh (embeds the board agent)
 # A failed step does not stop the others; the report shows what failed and where the log is.
 # The report is also saved to dist/BUILD-REPORT.txt. Exit code 0 only if every step passed.
 set -uo pipefail
@@ -56,7 +56,7 @@ elif ! command -v powershell.exe >/dev/null; then
 elif [ "${STATUS[board]}" != OK ]; then
     skip exe "board agent failed; the .exe needs it for Deploy agent"
 else
-    step exe "ctt-agent-console.exe + ctt-bt.exe (Windows)" \
+    step exe "ctt-agent-console.exe + ctt-agent.exe (Windows)" \
         scripts/build-windows.sh all --agent build/dut/agent/ctt-agent "${WIN_ARGS[@]}"
 fi
 
@@ -100,7 +100,7 @@ report() {
     artifact board build/dut/agent/ctt-agent "copy to the board (python3 -m ctt deploy, USB stick or UART), then: /tmp/ctt-agent version"
     echo " [Windows]"
     artifact exe dist/ctt-agent-console.exe "PowerShell: .\\dist\\ctt-agent-console.exe   |   WSL: dist/ctt-agent-console.exe"
-    artifact exe dist/ctt-bt.exe "PowerShell: .\\dist\\ctt-bt.exe   (or double-click in Explorer)"
+    artifact exe dist/ctt-agent.exe "PowerShell: .\\dist\\ctt-agent.exe   (or double-click in Explorer)"
     echo
     echo "Docs: README.md, docs/bt-app.md, docs/bt-client-test.md"
 }

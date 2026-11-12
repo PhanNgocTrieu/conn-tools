@@ -35,12 +35,46 @@ namespace ctt {
 namespace {
 
 std::mutex g_out;
+bool g_text = false;  // --text: human-readable lines for a person on the UART
 
-void emit(const Json& j) {
+void emit(const Json& j, const std::string& text = "") {
     std::lock_guard<std::mutex> lk(g_out);
-    std::fputs(j.str().c_str(), stdout);
+    if (g_text) {
+        if (text.empty()) return;
+        std::fputs(text.c_str(), stdout);
+    } else {
+        std::fputs(j.str().c_str(), stdout);
+    }
     std::fputc('\n', stdout);
     std::fflush(stdout);
+}
+
+// "hello\n" -> hello\n (printable ASCII as is, the rest escaped)
+std::string printable(const uint8_t* p, size_t n) {
+    std::string s;
+    for (size_t i = 0; i < n; ++i) {
+        uint8_t c = p[i];
+        if (c == '\n') s += "\\n";
+        else if (c == '\r') s += "\\r";
+        else if (c == '\t') s += "\\t";
+        else if (c >= 0x20 && c < 0x7f) s += char(c);
+        else {
+            char b[5];
+            std::snprintf(b, sizeof(b), "\\x%02x", c);
+            s += b;
+        }
+    }
+    return s;
+}
+
+std::string spaced_hex(const uint8_t* p, size_t n) {
+    std::string s;
+    char b[4];
+    for (size_t i = 0; i < n; ++i) {
+        std::snprintf(b, sizeof(b), i ? " %02x" : "%02x", p[i]);
+        s += b;
+    }
+    return s;
 }
 
 std::string to_hex(const uint8_t* p, size_t n) {
@@ -72,16 +106,19 @@ bool from_hex(const std::string& in, std::vector<uint8_t>& out) {
 void usage(FILE* f) {
     std::fputs(
         "usage: ctt-agent pipe [-t TRANSPORT] [-e ENDPOINT] [-o KEY=VALUE]... [--connect EP]\n"
-        "                      [--accept-timeout SEC]\n"
+        "                      [--accept-timeout SEC] [--text]\n"
         "Relays a raw link: stdin hex lines -> link, link data -> stdout JSON lines.\n"
-        "Default: -t rfcomm, listen on a kernel-assigned channel.\n",
+        "Default: -t rfcomm, listen on a kernel-assigned channel.\n"
+        "--text: for a person on the console. A typed line is sent as text + \"\\n\";\n"
+        "        \"/hex 00 ff 0d\" sends raw bytes. Received data is printed as text and hex,\n"
+        "        with running totals of bytes received / sent.\n",
         f);
 }
 
 void closed(const std::string& reason) {
     Json j;
     j.add("event", "closed").add("reason", reason);
-    emit(j);
+    emit(j, "-- link closed: " + reason);
 }
 
 }  // namespace
@@ -101,6 +138,7 @@ int run_pipe_command(int argc, char** argv) {
         else if (a == "-e" || a == "--endpoint") endpoint = val("-e");
         else if (a == "--connect") connect_ep = val("--connect");
         else if (a == "--accept-timeout") accept_timeout = std::atof(val("--accept-timeout").c_str());
+        else if (a == "--text") g_text = true;
         else if (a == "-o" || a == "--opt") {
             std::string kv = val("-o");
             auto eq = kv.find('=');
@@ -126,7 +164,9 @@ int run_pipe_command(int argc, char** argv) {
             Json jl;
             jl.add("event", "listening").add("transport", t->name()).add("endpoint", lis->local());
             lis->describe(jl);
-            emit(jl);
+            emit(jl, "-- listening on " + std::string(t->name()) + " " + lis->local() +
+                         (g_text ? "  (type a line + Enter to send it, /hex 00 ff to send bytes, Ctrl+C to quit)"
+                                 : ""));
             s = lis->accept(accept_timeout > 0 ? int(accept_timeout * 1000) : -1);
             if (!s) {
                 closed("accept timeout");
@@ -135,22 +175,30 @@ int run_pipe_command(int argc, char** argv) {
         }
         Json jc;
         jc.add("event", "connected").add("peer", s->peer());
-        emit(jc);
+        emit(jc, "-- connected: " + s->peer());
 
         const uint64_t t0 = now_ns();
         Stream* sp = s.get();
         std::thread reader([sp, t0] {
             uint8_t buf[4096];
+            uint64_t total = 0;
             try {
                 for (;;) {
                     ssize_t n = sp->read_some(buf, sizeof(buf));
                     if (n <= 0) break;
+                    total += uint64_t(n);
+                    const double t = double(now_ns() - t0) / 1e9;
                     Json j;
                     j.add("event", "rx")
-                        .add("t", double(now_ns() - t0) / 1e9)
+                        .add("t", t)
                         .add("len", int64_t(n))
+                        .add("total", total)
                         .add("hex", to_hex(buf, size_t(n)));
-                    emit(j);
+                    char head[96];
+                    std::snprintf(head, sizeof(head), "[%7.2fs] board rx %zd B (total rx %llu B): ", t, n,
+                                  (unsigned long long)total);
+                    emit(j, head + ("\"" + printable(buf, size_t(n)) + "\"   hex " +
+                                    spaced_hex(buf, size_t(n))));
                 }
                 closed("peer closed the link");
             } catch (const std::exception& e) {
@@ -163,19 +211,29 @@ int run_pipe_command(int argc, char** argv) {
 
         std::string line;
         std::vector<uint8_t> data;
+        uint64_t total_tx = 0;
         while (std::getline(std::cin, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();  // CRLF from a serial console
             if (line.empty()) continue;
-            if (!from_hex(line, data)) {
+            bool ok = true;
+            if (!g_text) ok = from_hex(line, data);
+            else if (line.rfind("/hex ", 0) == 0) ok = from_hex(line.substr(5), data);
+            else data.assign(line.begin(), line.end()), data.push_back('\n');
+            if (!ok || data.empty()) {
                 Json j;
                 j.add("event", "error").add("message", "stdin line is not hex: " + line);
-                emit(j);
+                emit(j, "-- not a hex string: " + line);
                 continue;
             }
             struct iovec iov = {data.data(), data.size()};
             write_all(*sp, &iov, 1);
+            total_tx += data.size();
             Json j;
-            j.add("event", "tx").add("len", int64_t(data.size()));
-            emit(j);
+            j.add("event", "tx").add("len", int64_t(data.size())).add("total", total_tx);
+            char head[96];
+            std::snprintf(head, sizeof(head), "[%7.2fs] board tx %zu B (total tx %llu B): ",
+                          double(now_ns() - t0) / 1e9, data.size(), (unsigned long long)total_tx);
+            emit(j, head + ("\"" + printable(data.data(), data.size()) + "\""));
         }
         s->shutdown_write();
         closed("stdin closed");
@@ -183,7 +241,7 @@ int run_pipe_command(int argc, char** argv) {
     } catch (const std::exception& e) {
         Json j;
         j.add("event", "error").add("message", e.what());
-        emit(j);
+        emit(j, std::string("-- error: ") + e.what());
         return 1;
     }
 }

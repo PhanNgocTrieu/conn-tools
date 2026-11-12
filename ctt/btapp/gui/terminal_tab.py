@@ -19,6 +19,7 @@ class TerminalPane(ttk.LabelFrame):
 
     def __init__(self, master, title: str, send_text: str, on_send):
         super().__init__(master, text=title, padding=6)
+        self.totals: dict[str, int] = {}
         self.rowconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)
         self.box = tk.Text(self, state="disabled", wrap="char", font=("Consolas", 10))
@@ -38,7 +39,9 @@ class TerminalPane(ttk.LabelFrame):
             shown = data.hex(" ")
         else:
             shown = data.decode("utf-8", errors="replace").replace("\r", "\\r").replace("\n", "\\n")
-        self._insert(f"{time.strftime('%H:%M:%S')} {label} [{len(data)} B] ", "meta")
+        # running total per direction, e.g. "board → PC [6 B, total 18 B]"
+        self.totals[label] = self.totals.get(label, 0) + len(data)
+        self._insert(f"{time.strftime('%H:%M:%S')} {label} [{len(data)} B, total {self.totals[label]} B] ", "meta")
         self._insert(shown + "\n", tag)
 
     def meta(self, msg: str) -> None:
@@ -118,6 +121,8 @@ class TerminalTab(ttk.Frame):
 
     def _opened(self, session: TerminalSession):
         self.session = session
+        self.pc.totals.clear()
+        self.bd.totals.clear()
         t = session.target
         self.btn.configure(text="Disconnect", state="normal")
         self.info.configure(text=f"Connected {t.address} channel {t.channel}")

@@ -1,14 +1,14 @@
-# App test Bluetooth: `ctt-bt` (GUI) và `ctt-agent-console` (console)
+# App test Bluetooth: `ctt-agent` (GUI) và `ctt-agent-console` (console)
 
 Hai app dùng chung một lõi nghiệp vụ và một file cấu hình, chỉ khác cách hiển thị. Giao diện của app bằng **tiếng Anh**; tài liệu này ghi tên nút và menu đúng như trên app.
 
-| | `ctt-bt.exe` | `ctt-agent-console.exe` |
+| | `ctt-agent.exe` | `ctt-agent-console.exe` |
 |---|---|---|
 | Giao diện | Cửa sổ 3 tab, có biểu đồ | Menu số trong console, cùng các lệnh con |
 | Dùng khi | Ngồi trực tiếp trước PC | Vào PC qua SSH, hoặc cần chạy bằng script |
 | Trong WSL / Linux | `python3 -m ctt.btapp` | `python3 -m ctt.btapp console` |
 
-Cấu hình (SSH board, có dùng SSH hay không, địa chỉ BT, channel, block, thời gian) được lưu ở `%APPDATA%\ctt-bt\config.json` (Linux: `~/.config/ctt-bt/config.json`). Hai app đọc chung file này.
+Cấu hình (SSH board, có dùng SSH hay không, địa chỉ BT, channel, block, thời gian) được lưu ở `%APPDATA%\ctt-bt\config.json` (Linux: `~/.config/ctt-bt/config.json`). Hai app đọc chung file này. Thư mục vẫn tên `ctt-bt` (tên cũ của app) để giữ cấu hình đã lưu.
 
 ## 1. Hai cách nối PC với board
 
@@ -43,7 +43,7 @@ bt-daemon-cli.sh confirm-pairing        # chạy khi PC đang pair (numeric comp
 bluetoothctl    # rồi gõ: agent NoInputNoOutput / default-agent / pairable on / discoverable on
 ```
 
-## 2. GUI: `ctt-bt.exe`
+## 2. GUI: `ctt-agent.exe`
 
 ### Tab `1. Connect`
 | Vùng | Nút / ô | Tác dụng |
@@ -63,7 +63,7 @@ bluetoothctl    # rồi gõ: agent NoInputNoOutput / default-agent / pairable on
   - **Rate limit Mbit/s**: để trống là không giới hạn;
   - **Min Mbit/s (PASS)**: ngưỡng Mbit/s tối thiểu cho mỗi chiều đo được; để trống là không đặt ngưỡng;
   - **Verify CRC of every block**.
-- **Start / Stop**: biểu đồ cập nhật mỗi 0.5 s. Bấm Stop thì vẫn nhận được kết quả.
+- **Start / Stop**: biểu đồ và Log cập nhật mỗi 1 s (đã gửi / đã nhận bao nhiêu). Bấm Stop thì vẫn nhận được kết quả.
 - **Result**: Mbit/s từng chiều, RTT, `lost` và `CRC errors`.
   - **PASS** khi không mất gói, không lỗi CRC, đúng thứ tự, và đạt **Min Mbit/s** (nếu có nhập).
   - Khi FAIL, Log ghi rõ điều kiện không đạt, ví dụ `FAILED: PC->board 0.320 >= 1 Mbit/s`.
@@ -113,7 +113,7 @@ Choice:
   - `/quit`: thoát.
 
   Dữ liệu nhận hiện dạng `[PC rx] b'...'` (PC nhận) và `[board rx] b'...'` (board nhận, cần SSH).
-- **10** (test suite): chọn level `baseline` / `target`, chọn case (trống = tất cả). Kết quả lưu ở `ctt-results/suite-<level>-<thời điểm>.json` và `.csv`. Ngưỡng của từng case: [bt-test-cases.md](bt-test-cases.md#d-throughput-và-latency-có-ngưỡng-mbits).
+- **10** (test suite): chọn level `baseline` / `target`, chọn case (trống = tất cả). Kết quả lưu ở `ctt-results/suite-<level>-<thời điểm>.json` và `.csv`. Ngưỡng của từng case: [bt-test-cases.md](bt-test-cases.md#ngưỡng-pass).
 
 ### Lệnh con (dùng trong script / CI)
 
@@ -130,17 +130,20 @@ ctt-agent-console suite --list -l target                                    :: x
 ctt-agent-console suite --board root@192.168.1.10 -l baseline             :: chạy cả bộ BT-TP-01..06
 ctt-agent-console suite --addr AA:BB:CC:DD:EE:01 --channel 22 -l target --only BT-TP-01,BT-TP-02
 ctt-agent-console suite --dump > my-suite.json                              :: sửa ngưỡng rồi chạy với --file my-suite.json
+ctt-agent-console suite --addr AA:BB:CC:DD:EE:01 --channel 22 -q           :: không in trace mỗi giây
 ctt-agent-console term --board root@192.168.1.10
 ctt-agent-console unpair AA:BB:CC:DD:EE:01
 ```
 
-`run` và `suite` trả exit code 0 khi PASS, 1 khi FAIL. `ctt-bt.exe` nhận đúng các lệnh con này (ví dụ `ctt-bt run ...`). Trong WSL dùng `python3 -m ctt.btapp <lệnh>`.
+Trong lúc chạy, `run` và `suite` in mỗi giây một dòng: tốc độ và tổng đã gửi / đã nhận của PC, kèm dòng `[board] …` của agent trên board (khi có SSH). Cách đọc: [bt-client-test.md](bt-client-test.md#theo-dõi-trong-lúc-chạy-trace-mỗi-giây).
+
+`run` và `suite` trả exit code 0 khi PASS, 1 khi FAIL. `ctt-agent.exe` nhận đúng các lệnh con này (ví dụ `ctt-agent.exe run ...`). Trong WSL dùng `python3 -m ctt.btapp <lệnh>`.
 
 ## 4. Cài đặt
 
 **Windows**: không cần cài gì; chép 2 file `.exe` là chạy. Muốn SSH tới board thì cần SSH key mà board chấp nhận: lệnh `ssh root@<board>` phải chạy được trong PowerShell mà không hỏi mật khẩu.
 
-**Vào PC Windows qua SSH** (setup *Client Test*): bật OpenSSH Server trên PC đó, SSH vào rồi chạy `ctt-agent-console.exe`. Đừng chạy `ctt-bt.exe` qua SSH, vì cửa sổ sẽ không hiện ra. Console luôn in UTF-8, nên đọc được đúng chữ qua SSH.
+**Vào PC Windows qua SSH** (setup *Client Test*): bật OpenSSH Server trên PC đó, SSH vào rồi chạy `ctt-agent-console.exe`. Đừng chạy `ctt-agent.exe` qua SSH, vì cửa sổ sẽ không hiện ra. Console luôn in UTF-8, nên đọc được đúng chữ qua SSH.
 
 **WSL / Linux**: `sudo apt install python3-tk bluez`. Gắn dongle vào WSL bằng `scripts/usbipd-attach.ps1`. Nếu sau đó `hciconfig -a` vẫn trống, kiểm tra `lsusb` có thấy dongle không, module `btusb` đã nạp chưa và đã có firmware (`linux-firmware`) chưa; xem [wsl-setup.md](wsl-setup.md).
 

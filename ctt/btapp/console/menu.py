@@ -14,7 +14,7 @@ from typing import Callable
 from ctt import __version__
 from ctt.btapp.console.terminal import ConsoleTerminal
 from ctt.btapp.expectations import DEFAULT_SUITE, LEVELS, SuiteRunner, summary_lines, write_report
-from ctt.btapp.formatting import interval_line, result_lines
+from ctt.btapp.formatting import board_event_line, interval_line, result_lines
 from ctt.btapp.service import BtTestService, ThroughputParams
 from ctt.btapp.settings import AppSettings, SettingsStore
 from ctt.protocol.ctp import MODE_LABELS
@@ -222,6 +222,8 @@ class ConsoleMenu:
             lambda: runner.run(
                 cases, level,
                 on_case=lambda i, c: print(f"\n[{i}/{len(cases)}] {c.id} {c.title} ({c.duration_s:g}s)"),
+                on_interval=lambda iv: print(interval_line(iv)),
+                on_board_event=self._board_event,
                 on_outcome=lambda o: print(f"  -> {'PASS' if o.ok else 'FAIL'} "
                                            + (o.error or "  ".join(c.text() for c in o.checks[3:])))),
             runner.stop)
@@ -253,10 +255,10 @@ class ConsoleMenu:
 
     @staticmethod
     def _board_event(ev: dict) -> None:
-        if ev.get("event") == "session_end" and not ev.get("ok"):
-            print(f"  Board: session failed: {ev.get('message')}")
-        elif ev.get("event") in ("error", "warning"):
-            print(f"  Board {ev['event']}: {ev.get('message')}")
+        """Board agent trace (SSH mode only): what the board received / sent so far."""
+        line = board_event_line(ev)
+        if line:
+            print(line)
 
     def terminal(self) -> None:
         ConsoleTerminal(self.svc).run()

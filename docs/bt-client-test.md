@@ -23,6 +23,8 @@ scripts/build-dut.sh --generic --static --strip    # -> build/dut/agent/ctt-agen
 scripts/build-windows.sh console                   # -> dist/ctt-agent-console.exe (lần đầu tự cài Python)
 ```
 
+Hoặc không build: tải `ctt-agent-aarch64` và `ctt-agent-console.exe` (thêm `ctt-agent.exe` nếu dùng GUI) từ GitHub Releases, xem [release.md](release.md).
+
 **Xong khi** có đủ 2 file trên.
 
 ## Bước 1: Đưa `ctt-agent` lên board (không có mạng)
@@ -89,17 +91,20 @@ Mục đích là nhìn tận mắt dữ liệu đi đúng cả hai chiều.
 
 **UART:**
 ```sh
-/tmp/ctt-agent pipe -t rfcomm -e /22
+/tmp/ctt-agent pipe --text -t rfcomm -e /22
 ```
+`--text` cho người đọc: dòng gõ trên UART được gửi đi dạng chữ, `/hex 00 ff` gửi byte thô, và dữ liệu nhận được in cả chữ lẫn hex kèm tổng byte.
 
 **Client PC** (SSH): chạy `ctt-agent-console.exe`, vào menu **1** (Settings), trả lời `SSH to the board?` = `n`, nhập `<ADDR>` và channel `22`, rồi vào menu **9** (Terminal: send / receive data).
 
 | Thử | Làm | Mong đợi |
 |---|---|---|
-| Kết nối | Mở menu 9 | Console: `connected <ADDR> channel 22.` UART: `{"event":"connected",...}` |
-| PC → board | Gõ `hello board` rồi Enter | UART: `{"event":"rx",...,"hex":"68656c6c6f20626f6172640a"}` |
-| Board → PC | Trên UART gõ `6869205043` rồi Enter | Console: `[PC rx] b'hi PC'` |
-| Nhị phân | `/hex 00 ff 55 aa 0d 0a` | UART: `"hex":"00ff55aa0d0a"`, đúng 6 byte |
+| Kết nối | Mở menu 9 | Console: `connected <ADDR> channel 22.` UART: `-- connected: …` |
+| PC → board | Gõ `hello board` rồi Enter | Console: `[PC tx 12 B, total 12 B]`. UART: `board rx 12 B (total rx 12 B): "hello board\n"   hex 68 65 6c …` |
+| Board → PC | Trên UART gõ `hi PC` rồi Enter | UART: `board tx 6 B (total tx 6 B): "hi PC\n"`. Console: `[PC rx 6 B, total 6 B] b'hi PC\n'` |
+| Nhị phân | `/hex 00 ff 55 aa 0d 0a` | UART: `board rx 6 B (…): "\x00\xffU\xaa\r\n"   hex 00 ff 55 aa 0d 0a`, đúng 6 byte |
+
+Bản đầy đủ (kể cả với GUI `ctt-agent.exe`): [bt-test-cases.md](bt-test-cases.md) mục 2.
 
 Thoát bằng `/quit` (console) và Ctrl+C (UART).
 
@@ -124,7 +129,43 @@ ctt-agent-console.exe suite --addr <ADDR> --channel 22 -l target
 | BT-TP-05 | PC → board, block 4096, 30 s | ≥ 1.0 Mbit/s |
 | BT-TP-06 | board → PC, block 4096, 30 s | ≥ 1.0 Mbit/s |
 
-Mọi case cũng phải có mất gói 0, lỗi CRC 0. Giải thích ngưỡng và level `baseline`: [bt-test-cases.md](bt-test-cases.md#d-throughput-và-latency-có-ngưỡng-mbits).
+### Theo dõi trong lúc chạy (trace mỗi giây)
+
+Cả PC và board đều in **mỗi giây một dòng**: tốc độ của giây vừa qua, cộng **tổng đã gửi / đã nhận từ đầu** (byte và số frame). So hai bên là biết dữ liệu có tới đủ hay không. Ví dụ PC → board (`tx`), 3 s, giới hạn 0.4 Mbit/s:
+
+PC (console):
+```
+     1.0s  PC->board  0.403 Mbit/s  sent 50.5 KB (51 fr)
+     2.0s  PC->board  0.403 Mbit/s  sent 101.0 KB (102 fr)
+     3.0s  PC->board  0.395 Mbit/s  sent 150.5 KB (152 fr)
+PC -> board 0.403 Mbit/s   board -> PC - Mbit/s   lost 0  crc 0
+data: PC sent 150.5 KB, board received 150.5 KB
+```
+
+Board (UART: chạy `server` bằng tay ở trên, hoặc `journalctl -f -u ctt-agent-bt` nếu dùng service):
+```
+session from <địa chỉ BT của PC>
+  mode=tx block=990 duration=3.0s rate=400000 verify=on
+  direction: client -> server (up): this side RECEIVES and counts the data
+[up   rx]   0.00-  1.00 s      0.408 Mbps  +52 fr   51.5 KB | received 52 fr   51.5 KB  lost=0 crc_err=0
+[up   rx]   1.00-  2.00 s      0.400 Mbps  +50 fr   49.5 KB | received 102 fr  101.0 KB  lost=0 crc_err=0
+[up   rx]   2.00-  3.00 s      0.396 Mbps  +50 fr   49.5 KB | received 152 fr  150.5 KB  lost=0 crc_err=0
+session done: received 150.5 KB (152 fr) in 3.0 s = 0.403 Mbps, lost=0 crc_err=0
+```
+
+| Mode | PC in | Board in |
+|---|---|---|
+| `tx` (PC → board) | `PC->board … sent X` | `[up   rx] … received X  lost= crc_err=` |
+| `rx` (board → PC) | `board->PC … received X  lost crc` | `[down tx] … sent X` |
+| `bidir` | cả hai, cách nhau bằng `\|` | xen kẽ `[up   rx]` (nhận) và `[down tx]` (gửi) |
+| `echo` | `echo  rtt avg … replies N` | `[echo srv] … replied N` |
+
+- Board ngừng in dòng mới trong khi PC vẫn tăng `sent`: dữ liệu bị nghẽn hoặc mất trên đường Bluetooth.
+- `lost` / `crc_err` khác 0: hỏng dữ liệu, case FAIL dù tốc độ đạt.
+- Có SSH thì không cần nhìn UART: console và tab Throughput in luôn các dòng `[board] … received …` lấy từ agent trên board.
+- `suite -q` tắt trace, chỉ in kết quả từng case.
+
+Mọi case cũng phải có mất gói 0, lỗi CRC 0. Giải thích ngưỡng và level `baseline`: [bt-test-cases.md](bt-test-cases.md#ngưỡng-pass).
 
 Chạy riêng từng case:
 ```
@@ -165,4 +206,4 @@ Muốn đo kỹ hơn thì chạy tiếp:
 | Pair lỗi `CapacityReached` | Đủ 5 bond: `bt-daemon-cli.sh remove <addr>` |
 | `RFCOMM connect … [WinError 10060/10064]` | Chưa pair, sai channel, hoặc chưa chạy `ctt-agent server` / `pipe` trên board |
 | `bad CTP magic` khi `run` | Board đang chạy `pipe` chứ không phải `server` |
-| SSH vào Client PC chạy `.exe` không ra gì | Phải dùng `ctt-agent-console.exe`. `ctt-bt.exe` là app cửa sổ, chạy qua SSH sẽ không hiện |
+| SSH vào Client PC chạy `.exe` không ra gì | Phải dùng `ctt-agent-console.exe`. `ctt-agent.exe` là app cửa sổ, chạy qua SSH sẽ không hiện |

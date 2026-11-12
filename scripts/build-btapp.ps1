@@ -1,5 +1,5 @@
 # Build the Windows apps (PowerShell, from the repository root):
-#   dist\ctt-bt.exe              desktop window
+#   dist\ctt-agent.exe              desktop window
 #   dist\ctt-agent-console.exe   console only (menu + sub-commands; usable over SSH)
 #
 #   .\scripts\build-btapp.ps1                             # both apps
@@ -103,7 +103,7 @@ if ($Agent -ne "") {
 
 $apps = @()
 if ($Only -in @("all", "gui")) {
-    $apps += ,@("ctt-bt", "--windowed", "packaging\ctt_bt_main.py")
+    $apps += ,@("ctt-agent", "--windowed", "packaging\ctt_bt_main.py")
 }
 if ($Only -in @("all", "console")) {
     $apps += ,@("ctt-agent-console", "--console", "packaging\ctt_agent_console_main.py")

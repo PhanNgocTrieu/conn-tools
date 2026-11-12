@@ -187,7 +187,8 @@ class SuiteRunner:
             on_case: Callable[[int, SuiteCase], None] | None = None,
             on_interval: Callable[[Interval], None] | None = None,
             on_outcome: Callable[[CaseOutcome], None] | None = None,
-            auto_deploy: bool = False) -> list[CaseOutcome]:
+            auto_deploy: bool = False,
+            on_board_event: Callable[[dict], None] | None = None) -> list[CaseOutcome]:
         from ctt.btapp.service import ThroughputParams
         if level not in LEVELS:
             raise ValueError(f"level must be one of {', '.join(LEVELS)}")
@@ -199,7 +200,9 @@ class SuiteRunner:
                 on_case(i, case)
             params = ThroughputParams(case.mode, case.duration_s, case.block, 0, True)
             try:
-                r = self.service.run_throughput(params, on_interval=on_interval, auto_deploy=auto_deploy)
+                extra = {"on_board_event": on_board_event} if on_board_event else {}
+                r = self.service.run_throughput(params, on_interval=on_interval, auto_deploy=auto_deploy,
+                                                **extra)
                 out = CaseOutcome(case, level, r, evaluate(r, case.expect_for(level)))
             except (RuntimeError, OSError) as e:
                 out = CaseOutcome(case, level, None, [], str(e))

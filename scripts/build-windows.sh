@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Build the Windows .exe files from WSL, without pushing to GitHub.
 #
-#   scripts/build-windows.sh                  # ctt-agent-console.exe + ctt-bt.exe
+#   scripts/build-windows.sh                  # ctt-agent-console.exe + ctt-agent.exe
 #   scripts/build-windows.sh console          # ctt-agent-console.exe only
-#   scripts/build-windows.sh gui              # ctt-bt.exe only
+#   scripts/build-windows.sh gui              # ctt-agent.exe only
 #   scripts/build-windows.sh console --agent build/dut/agent/ctt-agent
 #
 # Installs what it needs on Windows: Python 3.12 via winget (per-user) if missing, and
@@ -63,8 +63,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$WORK_WIN\\scripts\\bui
 
 case "$ONLY" in
     console) EXES="ctt-agent-console.exe" ;;
-    gui) EXES="ctt-bt.exe" ;;
-    *) EXES="ctt-agent-console.exe ctt-bt.exe" ;;
+    gui) EXES="ctt-agent.exe" ;;
+    *) EXES="ctt-agent-console.exe ctt-agent.exe" ;;
 esac
 mkdir -p "$ROOT/dist"
 for exe in $EXES; do

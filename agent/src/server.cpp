@@ -63,19 +63,27 @@ ctp::StatsPayload serve_session(Stream& s, const AgentOptions& o) {
     ctp::StartParams sp = read_start(s, rd, lossy);
     const bool verify = sp.flags & ctp::kStartVerify;
 
+    // Say in words what this side does, so the trace below reads without knowing the protocol.
+    const char* direction = "";
+    switch (sp.mode) {
+        case ctp::Mode::Tx: direction = "client -> server (up): this side RECEIVES and counts the data"; break;
+        case ctp::Mode::Rx: direction = "server -> client (down): this side SENDS the data"; break;
+        case ctp::Mode::Bidir: direction = "both ways: 'up rx' = received here, 'down tx' = sent from here"; break;
+        case ctp::Mode::Echo: direction = "echo: this side sends back every request it receives"; break;
+    }
     Json jp;
     jp.add("event", "session_params")
+        .add("direction", direction)
         .add("mode", ctp::to_string(sp.mode))
         .add("block", sp.block_size)
         .add("duration_s", sp.duration_ms / 1000.0)
         .add("rate_bps", sp.rate_bps)
         .add("verify", verify)
         .add("lossy", lossy);
-    out::emit(jp, out::strprintf("  mode=%s block=%u duration=%.1fs rate=%llu verify=%s%s",
+    out::emit(jp, out::strprintf("  mode=%s block=%u duration=%.1fs rate=%llu verify=%s%s\n  direction: %s",
                                  ctp::to_string(sp.mode), sp.block_size, sp.duration_ms / 1000.0,
                                  (unsigned long long)sp.rate_bps, verify ? "on" : "off",
-                                 lossy ? " (datagram)" : ""));
-
+                                 lossy ? " (datagram)" : "", direction));
     send_control(s, ctp::MsgType::StartAck);
     const uint64_t t0 = now_ns();
 
@@ -122,7 +130,26 @@ ctp::StatsPayload serve_session(Stream& s, const AgentOptions& o) {
         case ctp::Mode::Echo: {
             ctp::Header h;
             const uint8_t* p = nullptr;
+            const uint64_t every = o.interval_s > 0 ? uint64_t(o.interval_s * 1e9) : 0;
+            uint64_t last_t = t0, last_n = 0, echo_bytes = 0;
+            auto progress = [&](uint64_t now) {
+                Json j;
+                j.add("event", "echo_progress")
+                    .add("t_start", double(last_t - t0) / 1e9)
+                    .add("t_end", double(now - t0) / 1e9)
+                    .add("replies", st.echoed - last_n)
+                    .add("total_replies", st.echoed)
+                    .add("total_bytes", echo_bytes);
+                out::emit(j, out::strprintf("[echo srv] %6.2f-%6.2f s  +%llu replies | replied %llu (%s)",
+                                            double(last_t - t0) / 1e9, double(now - t0) / 1e9,
+                                            (unsigned long long)(st.echoed - last_n),
+                                            (unsigned long long)st.echoed,
+                                            human_bytes(echo_bytes).c_str()));
+                last_t = now;
+                last_n = st.echoed;
+            };
             for (;;) {
+                if (every && now_ns() - last_t >= every) progress(now_ns());
                 if (lossy) {
                     auto r = rd.next_for(h, p, idle_ms);
                     if (r == FrameReader::Status::Timeout) {
@@ -133,12 +160,16 @@ ctp::StatsPayload serve_session(Stream& s, const AgentOptions& o) {
                 } else if (!rd.next(h, p)) {
                     throw std::runtime_error("peer closed during echo");
                 }
-                if (h.type == ctp::MsgType::Stop) break;
+                if (h.type == ctp::MsgType::Stop) {
+                    if (every && st.echoed != last_n) progress(now_ns());
+                    break;
+                }
                 if (h.type == ctp::MsgType::EchoReq) {
                     ctp::Header r = h;
                     r.type = ctp::MsgType::EchoRsp;
                     send_frame(s, r, p, h.payload_len);
                     ++st.echoed;
+                    echo_bytes += h.payload_len;
                 } else if (lossy) {
                     if (h.type == ctp::MsgType::Start) send_control(s, ctp::MsgType::StartAck);
                 } else {
@@ -228,15 +259,21 @@ int run_server(const AgentOptions& o) {
                                      st.rx_crc_errors, st.rx_duration_ns, double(st.rx_jitter_ns)));
             if (st.has_tx) je.add("tx", tx_json(st.tx_frames, st.tx_bytes, st.tx_duration_ns));
             if (st.echoed) je.add("echoed", st.echoed);
+            // session done: received 1.23 MB (1250 fr) in 30.0 s = 0.330 Mbps, lost=0 crc_err=0
             std::string text = "session done:";
             if (st.has_rx)
-                text += out::strprintf(" rx %.3f Mbps (lost=%llu crc_err=%llu)",
+                text += out::strprintf(" received %s (%llu fr) in %.1f s = %.3f Mbps, lost=%llu crc_err=%llu",
+                                       human_bytes(st.rx_bytes).c_str(),
+                                       (unsigned long long)st.rx_frames, st.rx_duration_ns / 1e9,
                                        mbps(st.rx_bytes, st.rx_duration_ns),
                                        (unsigned long long)st.rx_lost,
                                        (unsigned long long)st.rx_crc_errors);
             if (st.has_tx)
-                text += out::strprintf(" tx %.3f Mbps", mbps(st.tx_bytes, st.tx_duration_ns));
-            if (st.echoed) text += out::strprintf(" echoed=%llu", (unsigned long long)st.echoed);
+                text += out::strprintf("%s sent %s (%llu fr) in %.1f s = %.3f Mbps",
+                                       st.has_rx ? ";" : "", human_bytes(st.tx_bytes).c_str(),
+                                       (unsigned long long)st.tx_frames, st.tx_duration_ns / 1e9,
+                                       mbps(st.tx_bytes, st.tx_duration_ns));
+            if (st.echoed) text += out::strprintf(" replied to %llu echo requests", (unsigned long long)st.echoed);
             out::emit(je, text);
             rc = 0;
         } catch (const std::exception& e) {

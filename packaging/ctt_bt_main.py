@@ -1,4 +1,4 @@
-"""PyInstaller entry point for ctt-bt.exe."""
+"""PyInstaller entry point for ctt-agent.exe."""
 import sys
 
 from ctt.btapp.__main__ import main

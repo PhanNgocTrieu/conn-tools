@@ -1,6 +1,6 @@
-"""ctt-bt / ctt-agent-console: Bluetooth throughput test app.
+"""ctt-agent / ctt-agent-console: Bluetooth throughput test app.
 
-    python -m ctt.btapp                 desktop window (ctt-bt.exe)
+    python -m ctt.btapp                 desktop window (ctt-agent.exe)
     python -m ctt.btapp console         interactive console menu (ctt-agent-console.exe)
     python -m ctt.btapp scan | paired
     python -m ctt.btapp pair ADDR [--board root@ip]
@@ -17,7 +17,7 @@ import sys
 from ctt import __version__
 
 
-def build_parser(prog: str = "ctt-bt") -> argparse.ArgumentParser:
+def build_parser(prog: str = "ctt-agent") -> argparse.ArgumentParser:
     from ctt.btapp.console import commands
     p = argparse.ArgumentParser(prog=prog, description="CTT Bluetooth throughput test")
     p.add_argument("--version", action="version", version=f"{prog} {__version__}")
@@ -37,7 +37,7 @@ def use_utf8_output() -> None:
             stream.reconfigure(encoding="utf-8", errors="replace")
 
 
-def main(argv=None, default: str = "gui", prog: str = "ctt-bt") -> int:
+def main(argv=None, default: str = "gui", prog: str = "ctt-agent") -> int:
     use_utf8_output()
     args = build_parser(prog).parse_args(argv)
     cmd = args.cmd or default

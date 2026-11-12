@@ -191,7 +191,7 @@ class BtTestService:
         try:
             self._client = CtpClient(sock)
             return self._client.run(params.mode, params.duration_s, params.block, params.rate_bps,
-                                    params.verify, on_interval=on_interval)
+                                    params.verify, interval_s=1.0, on_interval=on_interval)
         finally:
             self._client = None
             sock.close()

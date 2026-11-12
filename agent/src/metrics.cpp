@@ -119,6 +119,13 @@ std::string RttStats::to_text() const {
         percentile(s, 99), s.back(), s.size() > 1 ? jitter_sum_ / double(s.size() - 1) : 0.0);
 }
 
+std::string human_bytes(uint64_t b) {
+    if (b < 1000) return out::strprintf("%llu B", (unsigned long long)b);
+    if (b < 1000000) return out::strprintf("%.1f KB", double(b) / 1e3);
+    if (b < 1000000000) return out::strprintf("%.2f MB", double(b) / 1e6);
+    return out::strprintf("%.2f GB", double(b) / 1e9);
+}
+
 IntervalReporter::IntervalReporter(const char* dir, const char* role, double interval_s,
                                    uint64_t t0_ns)
     : dir_(dir),
@@ -135,6 +142,7 @@ void IntervalReporter::emit(uint64_t now, uint64_t bytes, uint64_t frames, uint6
     double t_start = double(last_ns_ - t0_) / 1e9;
     double t_end = double(now - t0_) / 1e9;
     double rate = mbps(db, dt);
+    const bool rx = role_[0] == 'r';
     Json j;
     j.add("event", "interval")
         .add("dir", dir_)
@@ -145,13 +153,18 @@ void IntervalReporter::emit(uint64_t now, uint64_t bytes, uint64_t frames, uint6
         .add("frames", frames - last_frames_)
         .add("lost", lost - last_lost_)
         .add("crc_errors", crc - last_crc_)
-        .add("mbps", rate);
-    std::string text = out::strprintf("[%-4s %s] %6.2f-%6.2f s  %10.3f Mbps  frames=%llu", dir_,
-                                      role_, t_start, t_end, rate,
-                                      (unsigned long long)(frames - last_frames_));
-    if (role_[0] == 'r')
-        text += out::strprintf("  lost=%llu crc_err=%llu", (unsigned long long)(lost - last_lost_),
-                               (unsigned long long)(crc - last_crc_));
+        .add("mbps", rate)
+        .add("total_bytes", bytes)
+        .add("total_frames", frames);
+    if (rx) j.add("total_lost", lost).add("total_crc_errors", crc);
+    // [up   rx]   3.00-  4.00 s     0.412 Mbps  +52 fr  51.5 KB | received 208 fr  205.9 KB  lost=0 crc_err=0
+    std::string text = out::strprintf(
+        "[%-4s %s] %6.2f-%6.2f s  %9.3f Mbps  +%llu fr %9s | %s %llu fr %9s", dir_, role_, t_start,
+        t_end, rate, (unsigned long long)(frames - last_frames_), human_bytes(db).c_str(),
+        rx ? "received" : "sent", (unsigned long long)frames, human_bytes(bytes).c_str());
+    if (rx)
+        text += out::strprintf("  lost=%llu crc_err=%llu", (unsigned long long)lost,
+                               (unsigned long long)crc);
     out::emit(j, text);
     last_ns_ = now;
     last_bytes_ = bytes;
