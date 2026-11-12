@@ -9,9 +9,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from ctt import mfi  # noqa: E402
-from ctt.agent import find_host_agent  # noqa: E402
-from ctt.executor import LocalExecutor  # noqa: E402
+from ctt.interfaces import mfi  # noqa: E402
+from ctt.core.agent import find_host_agent  # noqa: E402
+from ctt.core.executor import LocalExecutor  # noqa: E402
 
 
 class ConfigTest(unittest.TestCase):

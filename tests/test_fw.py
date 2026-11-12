@@ -6,7 +6,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ctt import fw, wifi  # noqa: E402
+from ctt.firmware import vendor_daemons as fw
+from ctt.interfaces import wifi  # noqa: E402
 
 STATUS = """svc.usb-daemon=active
 svc.bt-daemon=active

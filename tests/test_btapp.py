@@ -12,9 +12,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from ctt.agent import find_host_agent  # noqa: E402
-from ctt.btapp import board, pairing  # noqa: E402
-from ctt.btapp.ctp_client import CtpClient, CtpError, _Pattern  # noqa: E402
+from ctt.core.agent import find_host_agent  # noqa: E402
+from ctt.bluetooth import board, pairing  # noqa: E402
+from ctt.protocol.ctp import CtpClient, CtpError, _Pattern  # noqa: E402
 
 FAKE = f"{sys.executable} {ROOT / 'tests' / 'fakes' / 'fake_bluetoothctl.py'}"
 

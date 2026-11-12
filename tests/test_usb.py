@@ -10,10 +10,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from ctt import usb  # noqa: E402
-from ctt.agent import find_host_agent  # noqa: E402
-from ctt.executor import LocalExecutor  # noqa: E402
-from ctt.runner import Runner, TestSpec  # noqa: E402
+from ctt.interfaces import usb  # noqa: E402
+from ctt.core.agent import find_host_agent  # noqa: E402
+from ctt.core.executor import LocalExecutor  # noqa: E402
+from ctt.testing.runner import Runner, TestSpec  # noqa: E402
 
 LIST = """usb1|1d6b|0002|480|09|Linux 6.1 ehci_hcd|EHCI Host Controller
 1-1|0781|5581|480|00|SanDisk|Ultra

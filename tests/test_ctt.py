@@ -8,11 +8,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ctt import units  # noqa: E402
-from ctt.agent import find_host_agent  # noqa: E402
-from ctt.executor import LocalExecutor, SshExecutor, make_executor  # noqa: E402
-from ctt.profile import expand  # noqa: E402
-from ctt.runner import Runner, TestSpec, evaluate, summarize  # noqa: E402
+from ctt.core import units  # noqa: E402
+from ctt.core.agent import find_host_agent  # noqa: E402
+from ctt.core.executor import LocalExecutor, SshExecutor, make_executor  # noqa: E402
+from ctt.testing.profile import expand  # noqa: E402
+from ctt.testing.runner import Runner, TestSpec, evaluate, summarize  # noqa: E402
 
 
 class UnitsTest(unittest.TestCase):
@@ -62,7 +62,7 @@ class SpecTest(unittest.TestCase):
         self.assertEqual(specs[1].transport_opts, {"adapter": "hci0", "security": "high"})
 
     def test_shipped_profiles_load(self):
-        from ctt.profile import load_profile
+        from ctt.testing.profile import load_profile
         for path in sorted((Path(__file__).resolve().parent.parent / "profiles").glob("*.yaml")):
             name, specs = load_profile(path)
             self.assertTrue(specs, path.name)

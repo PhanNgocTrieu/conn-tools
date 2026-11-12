@@ -7,10 +7,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from ctt import wifi  # noqa: E402
-from ctt.agent import find_host_agent  # noqa: E402
-from ctt.executor import LocalExecutor  # noqa: E402
-from ctt.runner import Runner, TestSpec, evaluate, summarize  # noqa: E402
+from ctt.interfaces import wifi  # noqa: E402
+from ctt.core.agent import find_host_agent  # noqa: E402
+from ctt.core.executor import LocalExecutor  # noqa: E402
+from ctt.testing.runner import Runner, TestSpec, evaluate, summarize  # noqa: E402
 
 IW = """### wlan0
 Connected to 1c:61:b4:aa:bb:cc (on wlan0)

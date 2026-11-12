@@ -10,9 +10,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from ctt.compare import compare  # noqa: E402
-from ctt.html_report import render_html, render_junit, svg_chart, write_reports  # noqa: E402
-from ctt.report import ReportWriter  # noqa: E402
+from ctt.reporting.compare import compare  # noqa: E402
+from ctt.reporting.html import render_html, render_junit, svg_chart, write_reports  # noqa: E402
+from ctt.reporting.writer import ReportWriter  # noqa: E402
 
 
 def make_run(root: Path, name: str, rows: list[dict], intervals=None) -> Path:

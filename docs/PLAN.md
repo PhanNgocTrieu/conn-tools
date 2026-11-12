@@ -94,7 +94,7 @@ connectivity-tools/
 │   ├── src/main.cpp           # ctt-agent CLI, output JSON lines
 │   └── tests/                 # GoogleTest
 ├── ctt/                       # Python package (CLI)
-│   ├── cli.py                 # `ctt discover|pair|run|report|deploy`
+│   ├── cli/                   # `ctt discover|pair|run|report|deploy`
 │   ├── dut.py                 # SSH (paramiko): deploy, start/stop agent, lấy log
 │   ├── bt.py                  # BlueZ D-Bus: scan/pair/trust
 │   ├── runner.py              # chạy profile, đồng bộ 2 phía

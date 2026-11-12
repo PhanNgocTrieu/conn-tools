@@ -52,13 +52,18 @@ jobs:
           python -c "import socket; assert hasattr(socket, 'AF_BLUETOOTH') and hasattr(socket, 'BTPROTO_RFCOMM'), 'no RFCOMM sockets'; print('RFCOMM socket support OK')"
           python -c "from winrt.windows.devices.bluetooth import BluetoothDevice; from winrt.windows.devices.enumeration import DeviceInformation, DevicePairingKinds; print('selector', BluetoothDevice.get_device_selector_from_pairing_state(False)[:80]); print('pairing kinds', DevicePairingKinds.CONFIRM_ONLY | DevicePairingKinds.CONFIRM_PIN_MATCH)"
       - name: Unit tests that run on Windows
-        run: python -m unittest tests.test_btapp.BoardHelpersTest tests.test_btapp.CtpClientTest.test_pattern_crc -v
+        run: python -m unittest tests.test_btapp.BoardHelpersTest tests.test_btapp.CtpClientTest.test_pattern_crc tests.test_btapp_service.SettingsTest tests.test_btapp_service.ConsoleMenuTest -v
       - name: GUI smoke test (window + screenshot)
         env:
           CTT_BT_SMOKE: smoke.png
         run: python -m ctt.btapp
-      - name: Build exe
-        run: python -m PyInstaller --noconfirm --onefile --windowed --name ctt-bt --paths . --collect-all winrt --hidden-import ctt.btapp.gui --hidden-import ctt.fw --hidden-import ctt.bt --add-data "dist/agent/ctt-agent;agent" packaging/ctt_bt_main.py
+      - name: Build exes (GUI + console)
+        shell: pwsh
+        run: .\scripts\build-btapp.ps1 -Agent dist\agent\ctt-agent -SkipInstall
+      - name: Console exe smoke test
+        run: |
+          dist\ctt-agent-console.exe --version
+          dist\ctt-agent-console.exe run --help
       - name: Exe smoke test
         shell: pwsh
         run: |
@@ -71,9 +76,12 @@ jobs:
           name: ctt-bt-windows
           path: |
             dist/ctt-bt.exe
+            dist/ctt-agent-console.exe
             smoke.png
       - name: Release (tags)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/ctt-bt.exe
+          files: |
+            dist/ctt-bt.exe
+            dist/ctt-agent-console.exe

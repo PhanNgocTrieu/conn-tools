@@ -11,9 +11,9 @@ dependencies = ["pyyaml>=5.1"]
 
 [project.scripts]
 ctt = "ctt.cli:main"
+ctt-bt = "ctt.btapp.__main__:main"
+ctt-agent-console = "ctt.btapp.__main__:console_main"
 
 [tool.setuptools.packages.find]
 include = ["ctt*"]
 
-[tool.setuptools.package-data]
-ctt = ["ui_static/*"]
