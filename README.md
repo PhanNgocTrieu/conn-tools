@@ -63,6 +63,34 @@ Kết quả nằm ở `dist/`.
 - Bản WSL copy mã nguồn sang `%LOCALAPPDATA%\ctt-build` rồi build ở đó, vì PyInstaller chạy không ổn định trên đường dẫn `\\wsl.localhost`.
 - GitHub Actions cũng build cả 3 file ([.github/workflows/btapp.yml](.github/workflows/btapp.yml)).
 
+### Chạy app console `ctt-agent-console`
+
+| Chạy từ | Lệnh |
+|---|---|
+| PowerShell / cmd (ở thư mục repo) | `.\dist\ctt-agent-console.exe` |
+| WSL, gọi bản `.exe` của Windows (dùng dongle do Windows quản lý) | `dist/ctt-agent-console.exe` |
+| Vào Client PC qua SSH (setup *Client Test*) | `ssh <user>@<client-pc>` rồi `ctt-agent-console.exe` |
+| WSL / Linux, không cần `.exe` (dùng BlueZ, dongle phải gắn vào WSL) | `python3 -m ctt.btapp console` |
+
+Chạy không có tham số sẽ mở **menu số** (1–9, 0 để thoát). Lệnh con dùng trong script:
+
+```bat
+ctt-agent-console.exe --version
+ctt-agent-console.exe scan                                                  :: tìm thiết bị BT
+ctt-agent-console.exe paired                                                :: thiết bị đã pair
+ctt-agent-console.exe pair <ADDR> --board root@<board-ip>                   :: pair, board tự chấp nhận qua SSH
+ctt-agent-console.exe run --board root@<board-ip> -m bidir -d 20            :: đo throughput (có SSH)
+ctt-agent-console.exe run --addr <ADDR> --channel 22 -m tx -d 30 --json     :: đo khi không SSH (Client Test)
+ctt-agent-console.exe term --board root@<board-ip>                          :: terminal gửi/nhận dữ liệu
+ctt-agent-console.exe unpair <ADDR>
+```
+
+`run` trả exit code 0 khi PASS và 1 khi FAIL. Trong WSL, thay `ctt-agent-console.exe` bằng `python3 -m ctt.btapp`.
+
+App cửa sổ: `.\dist\ctt-bt.exe` (Windows) hoặc `python3 -m ctt.btapp` (WSL, cần `python3-tk`).
+
+Chi tiết từng mục menu: [docs/bt-app.md](docs/bt-app.md#console).
+
 ## CLI `ctt` (WiFi / BT / USB / MFi)
 
 ```bash
