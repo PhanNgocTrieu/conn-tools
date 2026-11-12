@@ -2,7 +2,7 @@ SUMMARY = "CTT agent - connectivity test endpoint (TCP/UDP/RFCOMM/L2CAP/USB/I2C)
 DESCRIPTION = "Server/client for the Connectivity Test Tool: throughput, latency, \
 loss and integrity over WiFi, Bluetooth and USB, plus I2C (MFi auth coprocessor) \
 and storage tests. Uses only kernel interfaces (no libbluetooth / libusb)."
-HOMEPAGE = "https://example.invalid/connectivity-tools"
+HOMEPAGE = "https://github.com/PhanNgocTrieu/conn-tools"
 LICENSE = "CLOSED"
 
 # Point CTT_GIT_URI at your repository (local.conf or a bbappend), e.g.
@@ -11,7 +11,7 @@ LICENSE = "CLOSED"
 # During development you can build from a working copy instead:
 #   INHERIT += "externalsrc"
 #   EXTERNALSRC_pn-ctt-agent = "/path/to/connectivity-tools"
-CTT_GIT_URI ??= "git://example.invalid/connectivity-tools.git;protocol=https;branch=main"
+CTT_GIT_URI ??= "git://github.com/PhanNgocTrieu/conn-tools.git;protocol=https;branch=main"
 SRC_URI = "${CTT_GIT_URI} file://ctt-agent-bt.service"
 SRCREV ??= "${AUTOREV}"
 PV = "0.1+git${SRCPV}"

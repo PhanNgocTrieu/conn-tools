@@ -1,10 +1,12 @@
-"""Non-interactive sub-commands: scan, paired, pair, unpair, run, term."""
+"""Non-interactive sub-commands: scan, paired, pair, unpair, run, suite, term."""
 
 from __future__ import annotations
 
 import json
 
-from ctt.btapp.formatting import interval_line, passed, result_lines
+from ctt.btapp.expectations import (LEVELS, SuiteRunner, all_ok, evaluate, load_suite, summary_lines,
+                                    write_report)
+from ctt.btapp.formatting import interval_line, result_lines
 from ctt.btapp.service import BtTestService, ThroughputParams
 from ctt.btapp.settings import AppSettings
 from ctt.protocol.ctp import MODE_LABELS
@@ -36,11 +38,53 @@ def cmd_run(args) -> int:
                                        f"{MODE_LABELS[args.mode]} {args.duration:g}s block {args.block}"))
     finally:
         svc.close()
+    checks = evaluate(r, {"up_mbps_min": args.min_up, "down_mbps_min": args.min_down,
+                          "rtt_p99_ms_max": args.max_rtt_p99})
+    ok = all_ok(checks)
     if args.json:
-        print(json.dumps(r.to_dict(), indent=2))
+        print(json.dumps({**r.to_dict(), "checks": [c.__dict__ for c in checks],
+                          "verdict": "PASS" if ok else "FAIL"}, indent=2))
     print()
-    print("\n".join(result_lines(r)))
-    return 0 if passed(r) else 1
+    print("\n".join(result_lines(r)[:-1]))
+    for c in checks:
+        print(f"  [{'ok' if c.ok else 'FAIL'}] {c.text()}")
+    print("PASS" if ok else "FAIL")
+    return 0 if ok else 1
+
+
+def cmd_suite(args) -> int:
+    suite = load_suite(args.file)
+    if args.dump:
+        print(suite.to_json())
+        return 0
+    if args.list:
+        for c in suite.cases:
+            exp = ", ".join(f"{k} {v}" for k, v in c.expect_for(args.level).items())
+            print(f"{c.id:<9} {c.mode:<6} block {c.block:<5} {c.duration_s:g}s  {c.title}   [{args.level}: {exp}]")
+        return 0
+    require_target(args)
+    cases = suite.select(args.only.split(",") if args.only else None)
+    svc = BtTestService(settings_from_args(args))
+    runner = SuiteRunner(svc)
+    print(f"suite {suite.name}, level {args.level}, {len(cases)} cases")
+    try:
+        outcomes = runner.run(
+            cases, args.level,
+            on_case=lambda i, c: print(f"\n[{i}/{len(cases)}] {c.id} {c.title} ({c.duration_s:g}s)"),
+            on_interval=(lambda iv: print(interval_line(iv))) if args.verbose else None,
+            on_outcome=lambda o: print(f"  -> {'PASS' if o.ok else 'FAIL'} "
+                                       + (o.error or "  ".join(c.text() for c in o.checks[3:]))),
+            auto_deploy=True)
+    except KeyboardInterrupt:
+        runner.stop()
+        raise
+    finally:
+        svc.close()
+    print()
+    print("\n".join(summary_lines(outcomes)))
+    path = write_report(outcomes, suite, args.level, args.out)
+    print(f"report: {path} (+ .csv)")
+    return 0 if outcomes and all(o.ok for o in outcomes) else 1
 
 
 def cmd_term(args) -> int:
@@ -89,7 +133,21 @@ def register(sub) -> None:
     r.add_argument("-r", "--rate", type=float, default=0, help="Mbit/s limit, 0 = none")
     r.add_argument("--no-verify", action="store_true")
     r.add_argument("--json", action="store_true")
+    r.add_argument("--min-up", type=float, help="FAIL if PC->board Mbit/s is below this")
+    r.add_argument("--min-down", type=float, help="FAIL if board->PC Mbit/s is below this")
+    r.add_argument("--max-rtt-p99", type=float, help="FAIL if RTT p99 (ms, echo mode) is above this")
     r.set_defaults(func=cmd_run)
+    u = sub.add_parser("suite", help="run the Bluetooth test cases with Mbit/s expectations")
+    add_link_args(u)
+    u.add_argument("-l", "--level", choices=LEVELS, default="baseline",
+                   help="baseline = regression floor of the current setup, target = product goal")
+    u.add_argument("--only", help="comma-separated case ids, e.g. BT-TP-01,BT-TP-04")
+    u.add_argument("--file", help="suite JSON (default: built-in; see --dump)")
+    u.add_argument("--out", default="ctt-results", help="folder for the JSON/CSV report")
+    u.add_argument("--list", action="store_true", help="list the cases and expectations, run nothing")
+    u.add_argument("--dump", action="store_true", help="print the suite as JSON (to edit and pass to --file)")
+    u.add_argument("-v", "--verbose", action="store_true", help="print every interval")
+    u.set_defaults(func=cmd_suite)
     t = sub.add_parser("term", help="interactive raw data both ways")
     add_link_args(t)
     t.set_defaults(func=cmd_term)

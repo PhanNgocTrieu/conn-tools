@@ -20,5 +20,5 @@ class AppContext:
     sync_settings: Callable[[], None]  # copy every tab's fields into `settings` and save
 
     def fail(self, e: Exception) -> None:
-        self.log(f"Lỗi: {e}", "err")
-        self.set_status(f"Lỗi: {e}")
+        self.log(f"Error: {e}", "err")
+        self.set_status(f"Error: {e}")

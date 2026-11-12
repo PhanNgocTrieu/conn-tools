@@ -11,7 +11,7 @@ from ctt.btapp.gui.context import AppContext
 
 
 class ConnectTab(ttk.Frame):
-    title = "  1. Kết nối  "
+    title = "  1. Connect  "
 
     def __init__(self, master, ctx: AppContext):
         super().__init__(master, padding=12)
@@ -37,34 +37,34 @@ class ConnectTab(ttk.Frame):
     # ---- layout ------------------------------------------------------------------------
 
     def _board_frame(self):
-        bf = ttk.LabelFrame(self, text="Board board (SSH, dùng để chạy agent trên board)", padding=10)
+        bf = ttk.LabelFrame(self, text="Board board (SSH, used to run the agent on the board)", padding=10)
         ttk.Label(bf, text="SSH").grid(row=0, column=0, sticky="w")
         ttk.Entry(bf, textvariable=self.v_board, width=30).grid(row=0, column=1, sticky="w", padx=6)
-        ttk.Button(bf, text="Kiểm tra board", command=self.on_check).grid(row=0, column=2, padx=3)
+        ttk.Button(bf, text="Check board", command=self.on_check).grid(row=0, column=2, padx=3)
         ttk.Button(bf, text="Deploy agent", command=self.on_deploy).grid(row=0, column=3, padx=3)
-        ttk.Checkbutton(bf, text=f"Không dùng SSH (agent chạy sẵn dạng service, channel {SERVICE_CHANNEL})",
+        ttk.Checkbutton(bf, text=f"No SSH (agent already runs as a service, channel {SERVICE_CHANNEL})",
                         variable=self.v_nossh).grid(row=1, column=0, columnspan=4, sticky="w", pady=(6, 0))
-        self.board_info = ttk.Label(bf, text="Chưa kiểm tra", style="Cap.TLabel")
+        self.board_info = ttk.Label(bf, text="Not checked yet", style="Cap.TLabel")
         self.board_info.grid(row=2, column=0, columnspan=4, sticky="w", pady=(6, 0))
         return bf
 
     def _pairing_frame(self):
-        pf = ttk.LabelFrame(self, text="Bluetooth trên PC (USB dongle): tìm và pair với board", padding=10)
+        pf = ttk.LabelFrame(self, text="PC Bluetooth (USB dongle): find and pair with the board", padding=10)
         pf.columnconfigure(0, weight=1)
         pf.rowconfigure(1, weight=1)
         bar = ttk.Frame(pf)
         bar.grid(row=0, column=0, sticky="ew")
         ttk.Button(bar, text="Scan", command=self.on_scan).pack(side="left")
-        ttk.Button(bar, text="Thiết bị đã pair", command=self.on_paired).pack(side="left", padx=4)
+        ttk.Button(bar, text="Paired devices", command=self.on_paired).pack(side="left", padx=4)
         ttk.Button(bar, text="Pair", style="Accent.TButton", command=self.on_pair).pack(side="left", padx=4)
-        ttk.Button(bar, text="Bỏ pair", command=self.on_unpair).pack(side="left")
-        ttk.Checkbutton(bar, text="Board tự chấp nhận pairing (qua SSH)",
+        ttk.Button(bar, text="Unpair", command=self.on_unpair).pack(side="left")
+        ttk.Checkbutton(bar, text="Board accepts the pairing (over SSH)",
                         variable=self.v_accept).pack(side="left", padx=12)
         self.backend_lbl = ttk.Label(bar, text="", style="Cap.TLabel")
         self.backend_lbl.pack(side="right")
 
         self.devtree = ttk.Treeview(pf, columns=("name", "addr", "paired"), show="headings", height=8)
-        for c, t, w in (("name", "Tên", 260), ("addr", "Địa chỉ", 160), ("paired", "Đã pair", 80)):
+        for c, t, w in (("name", "Name", 260), ("addr", "Address", 160), ("paired", "Paired", 80)):
             self.devtree.heading(c, text=t)
             self.devtree.column(c, width=w, anchor="w")
         self.devtree.grid(row=1, column=0, sticky="nsew", pady=6)
@@ -72,12 +72,12 @@ class ConnectTab(ttk.Frame):
         return pf
 
     def _target_frame(self):
-        tf = ttk.LabelFrame(self, text="Đích kết nối", padding=10)
-        ttk.Label(tf, text="Địa chỉ BT của board").grid(row=0, column=0, sticky="w")
+        tf = ttk.LabelFrame(self, text="Target", padding=10)
+        ttk.Label(tf, text="Board BT address").grid(row=0, column=0, sticky="w")
         ttk.Entry(tf, textvariable=self.v_addr, width=22).grid(row=0, column=1, padx=6, sticky="w")
         ttk.Label(tf, text="RFCOMM channel").grid(row=0, column=2, sticky="w", padx=(12, 0))
         ttk.Entry(tf, textvariable=self.v_chan, width=8).grid(row=0, column=3, padx=6, sticky="w")
-        ttk.Label(tf, text="auto = lấy từ agent trên board qua SSH", style="Cap.TLabel").grid(
+        ttk.Label(tf, text="auto = ask the agent on the board over SSH", style="Cap.TLabel").grid(
             row=0, column=4, sticky="w")
         return tf
 
@@ -91,13 +91,13 @@ class ConnectTab(ttk.Frame):
 
     def on_check(self):
         self.ctx.sync_settings()
-        self.ctx.set_status("Đang kiểm tra board…")
+        self.ctx.set_status("Checking board…")
 
         def done(info):
             fw = info.get("fw", {})
             svc = fw.get("services", {})
             parts = [f"{info['hostname'] or '?'} ({info['arch']})",
-                     f"agent: {info['agent'] or 'CHƯA CÓ → bấm Deploy agent'}",
+                     f"agent: {info['agent'] or 'MISSING → press Deploy agent'}",
                      f"BT: {info.get('bt_address') or '?'}",
                      f"bt-daemon: {svc.get('bt-daemon', '-')}"]
             if isinstance(fw.get("bt", {}).get("paired"), int):
@@ -112,17 +112,17 @@ class ConnectTab(ttk.Frame):
         self.ctx.sync_settings()
         agent = bundled_agent()
         if not agent:
-            p = filedialog.askopenfilename(title="Chọn file ctt-agent (aarch64)")
+            p = filedialog.askopenfilename(title="Choose the ctt-agent file (aarch64)")
             if not p:
                 return
             agent = Path(p)
-        self.ctx.set_status("Đang copy agent lên board…")
+        self.ctx.set_status("Copying agent to the board…")
         self.ctx.dispatcher.background(
             lambda: self.ctx.service.deploy_agent(agent),
             lambda v: (self.ctx.log(f"Deploy OK: {v}", "ok"), self.ctx.set_status("Deploy OK")))
 
     def on_scan(self):
-        self.ctx.set_status("Đang scan Bluetooth (khoảng 10–15 s)…")
+        self.ctx.set_status("Scanning Bluetooth (about 10–15 s)…")
         self.devtree.delete(*self.devtree.get_children())
         self.ctx.dispatcher.background(lambda: self.ctx.service.scan(10), self._show_devices)
 
@@ -132,10 +132,10 @@ class ConnectTab(ttk.Frame):
     def _show_devices(self, devs):
         self.devtree.delete(*self.devtree.get_children())
         for d in devs:
-            self.devtree.insert("", "end", values=(d.name or "(không tên)", d.address,
-                                                   "có" if d.paired else ""))
-        self.ctx.set_status(f"{len(devs)} thiết bị")
-        self.ctx.log(f"Tìm thấy {len(devs)} thiết bị")
+            self.devtree.insert("", "end", values=(d.name or "(no name)", d.address,
+                                                   "yes" if d.paired else ""))
+        self.ctx.set_status(f"{len(devs)} devices")
+        self.ctx.log(f"Found {len(devs)} devices")
 
     def _on_dev_select(self, _e):
         sel = self.devtree.selection()
@@ -145,16 +145,16 @@ class ConnectTab(ttk.Frame):
     def on_pair(self):
         addr = self.v_addr.get().strip().upper()
         if not addr:
-            return messagebox.showinfo("Pair", "Chọn board trong danh sách hoặc nhập địa chỉ BT.")
+            return messagebox.showinfo("Pair", "Select the board in the list or enter its Bluetooth address.")
         self.ctx.sync_settings()
         ui = self.ctx.dispatcher.ui
         accept = self.v_accept.get()
-        self.ctx.set_status(f"Đang pair {addr}…")
+        self.ctx.set_status(f"Pairing {addr}…")
 
         def work():
             return self.ctx.service.pair(
                 addr, accept,
-                on_pin=lambda pin: ui(self.ctx.log, f"Mã xác nhận (numeric comparison): {pin}"),
+                on_pin=lambda pin: ui(self.ctx.log, f"Passkey (numeric comparison): {pin}"),
                 on_log=lambda m: ui(self.ctx.log, m))
 
         def done(r):
@@ -167,8 +167,8 @@ class ConnectTab(ttk.Frame):
 
     def on_unpair(self):
         addr = self.v_addr.get().strip().upper()
-        if not addr or not messagebox.askyesno("Bỏ pair", f"Bỏ pair {addr} trên PC?"):
+        if not addr or not messagebox.askyesno("Unpair", f"Unpair {addr} on the PC?"):
             return
         self.ctx.dispatcher.background(
             lambda: self.ctx.service.unpair(addr),
-            lambda r: (self.ctx.log(f"Bỏ pair {addr}: {r[1]}", "ok" if r[0] else "err"), self.on_paired()))
+            lambda r: (self.ctx.log(f"Unpair {addr}: {r[1]}", "ok" if r[0] else "err"), self.on_paired()))

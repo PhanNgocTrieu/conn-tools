@@ -6,7 +6,7 @@ Bộ công cụ đo **throughput, latency và độ toàn vẹn dữ liệu** c�
 
 | Thành phần | Chạy ở đâu | Dùng để làm gì |
 |---|---|---|
-| `ctt-bt.exe` | PC Windows (hoặc `python3 -m ctt.btapp` trong WSL) | App **cửa sổ** test Bluetooth: pair, đo throughput có biểu đồ, terminal gửi/nhận dữ liệu |
+| `ctt-bt.exe` | PC Windows (hoặc `python3 -m ctt.btapp` trong WSL) | App **cửa sổ** test Bluetooth: pair, đo throughput có biểu đồ, terminal gửi/nhận dữ liệu. Giao diện tiếng Anh |
 | `ctt-agent-console.exe` | PC Windows, kể cả khi vào máy đó qua SSH | Giống `ctt-bt` nhưng **chỉ dùng console**: có menu và các lệnh con |
 | `ctt-agent` | Board (aarch64) và PC Linux | Đầu đo (C++), dùng giao thức chung [CTP](docs/ctp-spec.md) |
 | `ctt` | WSL / Linux | CLI test mọi giao tiếp (WiFi, BT, USB, MFi), xuất report HTML/JUnit |
@@ -19,19 +19,24 @@ Bộ công cụ đo **throughput, latency và độ toàn vẹn dữ liệu** c�
 | Biết nên test Bluetooth theo cách nào với setup hiện tại | [docs/bt-test-plan.md](docs/bt-test-plan.md) |
 | Chạy từng test case Bluetooth, từ kết nối đến gửi dữ liệu | [docs/bt-test-cases.md](docs/bt-test-cases.md) |
 | Test Bluetooth trên **board khách hàng** (chỉ có UART), từng bước | [docs/bt-client-test.md](docs/bt-client-test.md) |
+| Đưa `ctt-agent` vào image Yocto của dự án (recipe trong `meta-project`) | [docs/yocto-recipe.md](docs/yocto-recipe.md) |
 | Test WiFi / USB / MFi bằng CLI `ctt` | [docs/TESTING.md](docs/TESTING.md) |
 | Cài môi trường WSL | [docs/wsl-setup.md](docs/wsl-setup.md) |
 
 ## Test Bluetooth nhanh (Windows)
 
-1. Tải `ctt-bt.exe` và `ctt-agent-console.exe` từ GitHub Actions (artifact `ctt-bt-windows`) hoặc từ trang Releases.
+1. Tải `ctt-bt.exe` và `ctt-agent-console.exe`:
+   - bản mới nhất của `main`: trang **Releases** → pre-release **`latest-main`**. Mỗi lần push lên `main` thì GitHub Actions tự build lại và cập nhật release này, kèm `ctt-agent-aarch64` (agent cho board) và `SHA256SUMS`;
+   - bản chính thức: release `vX.Y.Z` (tạo bằng cách push tag `v*`);
+   - hoặc tự build trên máy: `scripts/build-all.sh`.
 2. Cắm USB Bluetooth dongle vào PC. Dongle phải do Windows quản lý, không gắn vào WSL.
-3. Mở `ctt-bt.exe`, rồi ở tab **Kết nối**:
-   - nhập SSH của board → **Kiểm tra board**;
-   - nếu báo chưa có agent → **Deploy agent**;
+3. Mở `ctt-bt.exe` (giao diện tiếng Anh), rồi ở tab **1. Connect**:
+   - nhập SSH của board → **Check board**;
+   - nếu agent là `MISSING` → **Deploy agent**;
    - **Scan** → chọn board → **Pair**.
-4. Tab **Throughput**: chọn chiều đo → **Bắt đầu đo**. Kết quả PASS khi `mất 0 · CRC 0`.
-5. Tab **Terminal**: **Kết nối**, gõ ở khung PC (PC gửi sang board) và khung Board (board gửi về PC).
+4. Tab **2. Throughput**: chọn **Direction**, nhập **Min Mbit/s (PASS)** nếu cần → **Start**. Kết quả PASS khi `lost 0 · CRC errors 0` và đạt Min Mbit/s.
+5. Tab **3. Terminal**: **Connect**, gõ ở khung PC (PC gửi sang board) và khung Board (board gửi về PC).
+6. Bộ test case có ngưỡng Mbit/s (BT-TP-01…06): `ctt-agent-console.exe suite --board root@<board-ip> -l baseline`, xem [docs/bt-test-cases.md](docs/bt-test-cases.md#d-throughput-và-latency-có-ngưỡng-mbits).
 
 Không có cửa sổ (đang SSH vào PC): chạy `ctt-agent-console.exe` rồi làm theo menu, xem [docs/bt-app.md](docs/bt-app.md#console).
 
@@ -89,7 +94,10 @@ Kết quả nằm ở `dist/`.
   - Bản WSL tự lấy `build/dut/agent/ctt-agent`.
   - Bản PowerShell: thêm `-Agent <đường dẫn>`.
 - Bản WSL copy mã nguồn sang `%LOCALAPPDATA%\ctt-build` rồi build ở đó, vì PyInstaller chạy không ổn định trên đường dẫn `\\wsl.localhost`.
-- GitHub Actions cũng build cả 3 file ([.github/workflows/btapp.yml](.github/workflows/btapp.yml)).
+- GitHub Actions cũng build cả 3 file ([.github/workflows/btapp.yml](.github/workflows/btapp.yml)):
+  - mỗi lần chạy có artifact `ctt-bt-windows`, `ctt-agent-console-windows` và `ctt-agent-aarch64`;
+  - push lên `main` cập nhật release `latest-main`;
+  - tag `v*` tạo release chính thức.
 
 ### Chạy app console `ctt-agent-console`
 
@@ -100,7 +108,7 @@ Kết quả nằm ở `dist/`.
 | Vào Client PC qua SSH (setup *Client Test*) | `ssh <user>@<client-pc>` rồi `ctt-agent-console.exe` |
 | WSL / Linux, không cần `.exe` (dùng BlueZ, dongle phải gắn vào WSL) | `python3 -m ctt.btapp console` |
 
-Chạy không có tham số sẽ mở **menu số** (1–9, 0 để thoát). Lệnh con dùng trong script:
+Chạy không có tham số sẽ mở **menu số** (1–10, 0 để thoát; giao diện tiếng Anh). Lệnh con dùng trong script:
 
 ```bat
 ctt-agent-console.exe --version
@@ -109,11 +117,14 @@ ctt-agent-console.exe paired                                                :: t
 ctt-agent-console.exe pair <ADDR> --board root@<board-ip>                   :: pair, board tự chấp nhận qua SSH
 ctt-agent-console.exe run --board root@<board-ip> -m bidir -d 20            :: đo throughput (có SSH)
 ctt-agent-console.exe run --addr <ADDR> --channel 22 -m tx -d 30 --json     :: đo khi không SSH (Client Test)
+ctt-agent-console.exe run --board root@<board-ip> -m tx --min-up 1.0        :: FAIL nếu dưới 1.0 Mbit/s
+ctt-agent-console.exe suite --board root@<board-ip> -l baseline             :: bộ BT-TP-01..06 có ngưỡng Mbit/s
+ctt-agent-console.exe suite --addr <ADDR> --channel 22 -l target            :: như trên, board khách (không SSH)
 ctt-agent-console.exe term --board root@<board-ip>                          :: terminal gửi/nhận dữ liệu
 ctt-agent-console.exe unpair <ADDR>
 ```
 
-`run` trả exit code 0 khi PASS và 1 khi FAIL. Trong WSL, thay `ctt-agent-console.exe` bằng `python3 -m ctt.btapp`.
+`run` và `suite` trả exit code 0 khi PASS và 1 khi FAIL. `suite` lưu báo cáo JSON + CSV vào `ctt-results/`. Trong WSL, thay `ctt-agent-console.exe` bằng `python3 -m ctt.btapp`.
 
 App cửa sổ: `.\dist\ctt-bt.exe` (Windows) hoặc `python3 -m ctt.btapp` (WSL, cần `python3-tk`).
 

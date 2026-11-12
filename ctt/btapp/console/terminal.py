@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from ctt.btapp.service import BtTestService
 
-HELP = ("Gõ dòng rồi Enter: PC gửi sang board.  !text: board gửi về PC (cần SSH).  "
-        "/hex 48 65: gửi byte dạng hex.  /quit hoặc Ctrl+D: thoát.")
+HELP = ("Type a line + Enter: PC sends it to the board.  !text: board sends text to the PC (needs SSH).  "
+        "/hex 48 65: send raw bytes.  /quit or Ctrl+D: exit.")
 
 
 class ConsoleTerminal:
@@ -19,11 +19,11 @@ class ConsoleTerminal:
 
     def _board_event(self, ev: dict) -> None:
         if ev.get("event") == "rx":
-            self._show("board nhận", ev.get("data", b""))
+            self._show("board rx", ev.get("data", b""))
 
     def run(self) -> int:
         session = self.svc.open_terminal(
-            on_pc_rx=lambda d: self._show("PC nhận", d),
+            on_pc_rx=lambda d: self._show("PC rx", d),
             on_closed=lambda why: print(f"\r[link closed] {why}"),
             on_board_event=self._board_event, auto_deploy=self.auto_deploy)
         t = session.target
@@ -37,7 +37,7 @@ class ConsoleTerminal:
                     try:
                         session.send_from_pc(bytes.fromhex(line[5:].replace(" ", "")))
                     except ValueError:
-                        print("chuỗi hex không hợp lệ")
+                        print("invalid hex string")
                 elif line.startswith("!"):
                     if not session.has_board_side:
                         print("board send needs SSH to the board")

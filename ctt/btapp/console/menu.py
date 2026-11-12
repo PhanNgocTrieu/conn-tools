@@ -13,6 +13,7 @@ from typing import Callable
 
 from ctt import __version__
 from ctt.btapp.console.terminal import ConsoleTerminal
+from ctt.btapp.expectations import DEFAULT_SUITE, LEVELS, SuiteRunner, summary_lines, write_report
 from ctt.btapp.formatting import interval_line, result_lines
 from ctt.btapp.service import BtTestService, ThroughputParams
 from ctt.btapp.settings import AppSettings, SettingsStore
@@ -37,29 +38,29 @@ def ask(prompt: str, default: str = "", check: Callable[[str], str | None] | Non
 
 def validate_board(value: str) -> str | None:
     if "@" not in value or value.startswith("@") or value.endswith("@"):
-        return "cần dạng user@ip, ví dụ root@192.168.1.10"
+        return "expected user@ip, e.g. root@192.168.1.10"
     return None
 
 
 def validate_bt_addr(value: str) -> str | None:
     if value and not BT_ADDR_RE.match(value.upper()):
-        return "cần dạng AA:BB:CC:DD:EE:FF, hoặc để trống"
+        return "expected AA:BB:CC:DD:EE:FF, or empty"
     return None
 
 
 def required_bt_addr(value: str) -> str | None:
-    return validate_bt_addr(value) or (None if value else "cần nhập địa chỉ AA:BB:CC:DD:EE:FF")
+    return validate_bt_addr(value) or (None if value else "an address AA:BB:CC:DD:EE:FF is required")
 
 
 def validate_channel(value: str) -> str | None:
     if value.lower() == "auto" or (value.isdigit() and 1 <= int(value) <= 30):
         return None
-    return "cần 'auto' hoặc số từ 1 đến 30"
+    return "expected 'auto' or a number 1-30"
 
 
 def ask_yes(prompt: str, default: bool = True) -> bool:
     v = ask(f"{prompt} (y/n)", "y" if default else "n",
-            lambda v: None if v.lower() in ("y", "yes", "n", "no") else "trả lời y hoặc n").lower()
+            lambda v: None if v.lower() in ("y", "yes", "n", "no") else "answer y or n").lower()
     return v.startswith("y")
 
 
@@ -69,16 +70,17 @@ class ConsoleMenu:
         self.settings: AppSettings = self.store.load()
         self.svc = BtTestService(self.settings)
         self.items: list[tuple[str, str, Callable[[], None]]] = [
-            ("1", "Cài đặt (SSH board / không SSH / địa chỉ BT / channel)", self.configure),
-            ("2", "Kiểm tra board (SSH)", self.check_board),
-            ("3", "Deploy agent lên board (SSH)", self.deploy),
+            ("1", "Settings (board SSH / no SSH / BT address / channel)", self.configure),
+            ("2", "Check board (SSH)", self.check_board),
+            ("3", "Deploy agent to the board (SSH)", self.deploy),
             ("4", "Scan Bluetooth", self.scan),
-            ("5", "Thiết bị đã pair", self.paired),
-            ("6", "Pair với board", self.pair),
-            ("7", "Bỏ pair", self.unpair),
-            ("8", "Đo throughput / latency", self.throughput),
-            ("9", "Terminal: gửi / nhận dữ liệu", self.terminal),
-            ("0", "Thoát", self.quit),
+            ("5", "Paired devices", self.paired),
+            ("6", "Pair with the board", self.pair),
+            ("7", "Unpair", self.unpair),
+            ("8", "Throughput / latency test", self.throughput),
+            ("9", "Terminal: send / receive data", self.terminal),
+            ("10", "Test suite with Mbit/s expectations (BT-TP-01..06)", self.suite),
+            ("0", "Exit", self.quit),
         ]
         self._running = True
 
@@ -86,22 +88,22 @@ class ConsoleMenu:
 
     def header(self) -> str:
         s = self.settings
-        link = f"SSH {s.board}" if s.uses_ssh else "không SSH (agent chạy sẵn trên board)"
+        link = f"SSH {s.board}" if s.uses_ssh else "no SSH (agent already running on the board)"
         return (f"\n=== CTT Bluetooth console {__version__} ===\n"
                 f"Board: {link} | BT: {s.address() or '?'} | channel: {s.channel}")
 
     def run(self) -> int:
         ok, msg = self.svc.pairing_status()
-        print(f"Bluetooth trên PC: {self.svc.pairing.name}: {'OK' if ok else msg}")
+        print(f"PC Bluetooth: {self.svc.pairing.name}: {'OK' if ok else msg}")
         try:
             while self._running:
                 print(self.header())
                 for key, label, _ in self.items:
                     print(f"  {key}) {label}")
-                choice = input("Chọn: ").strip()
+                choice = input("Choice: ").strip()
                 action = next((fn for key, _, fn in self.items if key == choice), None)
                 if not action:
-                    print("Lựa chọn không hợp lệ")
+                    print("Invalid choice")
                     continue
                 self._safe(action)
         except (EOFError, KeyboardInterrupt):
@@ -116,37 +118,37 @@ class ConsoleMenu:
         try:
             action()
         except KeyboardInterrupt:
-            print("\n(dừng)")
+            print("\n(stopped)")
         except (RuntimeError, OSError, ValueError) as e:
-            print(f"Lỗi: {e}")
+            print(f"Error: {e}")
 
     # ---- actions -------------------------------------------------------------------------
 
     def configure(self) -> None:
         s = self.settings
-        s.no_ssh = not ask_yes("Có SSH tới board?", s.uses_ssh)
+        s.no_ssh = not ask_yes("SSH to the board?", s.uses_ssh)
         if s.uses_ssh:
             s.board = ask("SSH board (user@ip)", s.board if validate_board(s.board) is None else "",
                           validate_board)
-            s.bt_addr = ask("Địa chỉ BT của board (trống = lấy qua SSH)",
+            s.bt_addr = ask("Board BT address (empty = read over SSH)",
                             s.address() if validate_bt_addr(s.address()) is None else "",
                             validate_bt_addr).upper()
-            s.channel = ask("RFCOMM channel (auto = hỏi board qua SSH)", s.channel, validate_channel)
+            s.channel = ask("RFCOMM channel (auto = ask the board over SSH)", s.channel, validate_channel)
         else:
-            s.bt_addr = ask("Địa chỉ BT của board (trống = chọn sau bằng Scan / Thiết bị đã pair)",
+            s.bt_addr = ask("Board BT address (empty = pick later with Scan / Paired devices)",
                             s.address() if validate_bt_addr(s.address()) is None else "",
                             validate_bt_addr).upper()
             ch = s.channel if str(s.channel).isdigit() else "22"
-            s.channel = ask("RFCOMM channel trên board", ch,
-                            lambda v: None if v.isdigit() and 1 <= int(v) <= 30 else "cần số từ 1 đến 30")
+            s.channel = ask("RFCOMM channel on the board", ch,
+                            lambda v: None if v.isdigit() and 1 <= int(v) <= 30 else "expected a number 1-30")
         self.store.save(s)
-        print("Đã lưu.")
+        print("Saved.")
 
     def check_board(self) -> None:
         info = self.svc.check_board()
         fw = info.get("fw", {})
         print(f"  host       : {info['hostname'] or '?'} ({info['arch']})")
-        print(f"  agent      : {info['agent'] or 'CHƯA CÓ -> chọn 3 để deploy'}")
+        print(f"  agent      : {info['agent'] or 'MISSING -> choose 3 to deploy'}")
         print(f"  BT address : {info.get('bt_address') or '?'}")
         print(f"  bt-manager : {fw.get('services', {}).get('bt-daemon', '-')}")
         if isinstance(fw.get("bt", {}).get("paired"), int):
@@ -158,24 +160,24 @@ class ConsoleMenu:
 
     def _devices(self, devs) -> None:
         for i, d in enumerate(devs, 1):
-            print(f"  {i:2d}. {d.address}  {'[paired] ' if d.paired else ''}{d.name or '(không tên)'}")
-        print(f"  ({len(devs)} thiết bị)")
-        if devs and ask_yes("Chọn một thiết bị làm board?", False):
-            idx = int(ask("Số thứ tự", "1")) - 1
+            print(f"  {i:2d}. {d.address}  {'[paired] ' if d.paired else ''}{d.name or '(no name)'}")
+        print(f"  ({len(devs)} devices)")
+        if devs and ask_yes("Use one of them as the board?", False):
+            idx = int(ask("Number", "1")) - 1
             self.settings.bt_addr = devs[idx].address
             self.store.save(self.settings)
 
     def scan(self) -> None:
-        print("Đang scan (10–15 s)...")
+        print("Scanning (10-15 s)...")
         self._devices(self.svc.scan(10))
 
     def paired(self) -> None:
         self._devices(self.svc.paired())
 
     def pair(self) -> None:
-        addr = ask("Địa chỉ BT của board", self.settings.address(), required_bt_addr).upper()
-        accept = self.settings.uses_ssh and ask_yes("Board tự chấp nhận pairing qua SSH?", True)
-        ok, msg = self.svc.pair(addr, accept, on_pin=lambda p: print(f"  Mã xác nhận: {p}"),
+        addr = ask("Board BT address", self.settings.address(), required_bt_addr).upper()
+        accept = self.settings.uses_ssh and ask_yes("Board accepts the pairing itself over SSH?", True)
+        ok, msg = self.svc.pair(addr, accept, on_pin=lambda p: print(f"  Passkey: {p}"),
                                 on_log=lambda m: print(f"  {m}"))
         print(("OK  " if ok else "FAIL ") + msg)
         if ok:
@@ -183,49 +185,76 @@ class ConsoleMenu:
             self.store.save(self.settings)
 
     def unpair(self) -> None:
-        addr = ask("Địa chỉ cần bỏ pair", self.settings.address(), required_bt_addr).upper()
+        addr = ask("Address to unpair", self.settings.address(), required_bt_addr).upper()
         print(self.svc.unpair(addr)[1])
 
     def throughput(self) -> None:
         for i, m in enumerate(MODES, 1):
             print(f"  {i}) {MODE_LABELS[m]}")
-        mode = MODES[int(ask("Chiều đo", "1")) - 1]
+        mode = MODES[int(ask("Direction", "1")) - 1]
         params = ThroughputParams(
             mode=mode,
-            duration_s=float(ask("Thời gian (s)", self.settings.duration)),
+            duration_s=float(ask("Duration (s)", self.settings.duration)),
             block=int(ask("Block (byte)", self.settings.block)),
-            rate_bps=int(float(ask("Giới hạn Mbit/s (0 = tối đa)", "0")) * 1e6),
-            verify=ask_yes("Kiểm tra CRC?", True))
+            rate_bps=int(float(ask("Rate limit Mbit/s (0 = unlimited)", "0")) * 1e6),
+            verify=ask_yes("Verify CRC?", True))
         self.settings.duration, self.settings.block = str(params.duration_s), str(params.block)
         self.store.save(self.settings)
-        print("Ctrl+C để dừng sớm (kết quả vẫn được thu về).")
+        print("Ctrl+C stops early (the result is still collected).")
+        result = self._run_in_worker(
+            lambda: self.svc.run_throughput(
+                params, on_interval=lambda iv: print(interval_line(iv)),
+                on_board_event=self._board_event,
+                on_connect=lambda t: print(f"RFCOMM connect {t.address} channel {t.channel}...")),
+            self.svc.stop_throughput)
+        print("\n".join(result_lines(result)))
+
+    def suite(self) -> None:
+        for c in DEFAULT_SUITE.cases:
+            print(f"  {c.id}  {c.mode:<5} block {c.block:<5} {c.duration_s:g}s  {c.title}")
+        level = ask(f"Level ({' / '.join(LEVELS)})", "baseline",
+                    lambda v: None if v in LEVELS else f"expected one of: {', '.join(LEVELS)}")
+        only = ask("Case ids, comma-separated (empty = all)", "")
+        cases = DEFAULT_SUITE.select(only.split(",") if only else None)
+        runner = SuiteRunner(self.svc)
+        print("Ctrl+C stops after the current case.")
+        outcomes = self._run_in_worker(
+            lambda: runner.run(
+                cases, level,
+                on_case=lambda i, c: print(f"\n[{i}/{len(cases)}] {c.id} {c.title} ({c.duration_s:g}s)"),
+                on_outcome=lambda o: print(f"  -> {'PASS' if o.ok else 'FAIL'} "
+                                           + (o.error or "  ".join(c.text() for c in o.checks[3:])))),
+            runner.stop)
+        print()
+        print("\n".join(summary_lines(outcomes)))
+        print(f"report: {write_report(outcomes, DEFAULT_SUITE, level, 'ctt-results')} (+ .csv)")
+
+    def _run_in_worker(self, work: Callable, stop: Callable):
+        """Run `work` in a thread so Ctrl+C calls `stop` and the result is still returned."""
         outcome: dict = {}
 
-        def work():
+        def target():
             try:
-                outcome["result"] = self.svc.run_throughput(
-                    params, on_interval=lambda iv: print(interval_line(iv)),
-                    on_board_event=self._board_event,
-                    on_connect=lambda t: print(f"Kết nối RFCOMM {t.address} channel {t.channel}..."))
-            except Exception as e:  # noqa: BLE001 - shown below
+                outcome["value"] = work()
+            except Exception as e:  # noqa: BLE001 - re-raised below
                 outcome["error"] = e
 
-        worker = threading.Thread(target=work, daemon=True)
+        worker = threading.Thread(target=target, daemon=True)
         worker.start()
         while worker.is_alive():
             try:
                 worker.join(0.2)
             except KeyboardInterrupt:
-                print("\nĐang dừng...")
-                self.svc.stop_throughput()
+                print("\nStopping...")
+                stop()
         if "error" in outcome:
             raise outcome["error"]
-        print("\n".join(result_lines(outcome["result"])))
+        return outcome["value"]
 
     @staticmethod
     def _board_event(ev: dict) -> None:
         if ev.get("event") == "session_end" and not ev.get("ok"):
-            print(f"  Board: phiên lỗi: {ev.get('message')}")
+            print(f"  Board: session failed: {ev.get('message')}")
         elif ev.get("event") in ("error", "warning"):
             print(f"  Board {ev['event']}: {ev.get('message')}")
 

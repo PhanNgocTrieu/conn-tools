@@ -1,6 +1,6 @@
 # App test Bluetooth: `ctt-bt` (GUI) và `ctt-agent-console` (console)
 
-Hai app dùng chung một lõi nghiệp vụ và một file cấu hình, chỉ khác cách hiển thị:
+Hai app dùng chung một lõi nghiệp vụ và một file cấu hình, chỉ khác cách hiển thị. Giao diện của app bằng **tiếng Anh**; tài liệu này ghi tên nút và menu đúng như trên app.
 
 | | `ctt-bt.exe` | `ctt-agent-console.exe` |
 |---|---|---|
@@ -15,7 +15,7 @@ Cấu hình (SSH board, có dùng SSH hay không, địa chỉ BT, channel, bloc
 | Chế độ | Khi nào | App làm gì trên board |
 |---|---|---|
 | **Có SSH** (mặc định) | PC vào được board qua LAN (setup *Local Test*) | Tự kiểm tra board, deploy agent, chạy server RFCOMM, tự chấp nhận pairing, chạy `ctt-agent pipe` cho terminal hai chiều |
-| **Không SSH** | Board chỉ có UART (setup *Client Test*) | Không làm gì trên board. Người test tự chạy agent trên board qua UART; app nối vào channel cố định (mặc định 22) |
+| **Không SSH** | Board chỉ có UART (setup *Client Test*) | Không làm gì trên board. Người test tự chạy agent trên board qua UART (hoặc agent chạy sẵn bằng service, xem [yocto-recipe.md](yocto-recipe.md)); app nối vào channel cố định (mặc định 22) |
 
 Chi tiết về hai setup xem [bt-test-plan.md](bt-test-plan.md).
 
@@ -45,56 +45,75 @@ bluetoothctl    # rồi gõ: agent NoInputNoOutput / default-agent / pairable on
 
 ## 2. GUI: `ctt-bt.exe`
 
-### Tab 1: Kết nối
+### Tab `1. Connect`
 | Vùng | Nút / ô | Tác dụng |
 |---|---|---|
-| Board (SSH) | **SSH**, **Kiểm tra board** | Hiện hostname, agent, địa chỉ BT, trạng thái bt-daemon, số bond (tối đa 5) |
+| Board board (SSH) | **SSH**, **Check board** | Hiện hostname, agent, địa chỉ BT, trạng thái bt-daemon, số bond (tối đa 5) |
 | | **Deploy agent** | Copy agent aarch64 đóng gói sẵn trong `.exe` lên `/tmp/ctt-agent` |
-| | **Không dùng SSH** | Chuyển sang chế độ không SSH (channel mặc định 22) |
-| Bluetooth trên PC | **Scan**, **Thiết bị đã pair** | Tìm thiết bị bằng dongle của PC |
-| | **Pair**, **Bỏ pair** | Pair hoặc bỏ pair với địa chỉ đang chọn. Tick "Board tự chấp nhận" thì board xác nhận qua SSH. Mã numeric comparison được ghi vào nhật ký |
-| Đích kết nối | **Địa chỉ BT**, **RFCOMM channel** | `auto` = hỏi board qua SSH. Không SSH: nhập số channel (22) |
+| | **No SSH (agent already runs as a service, channel 22)** | Chuyển sang chế độ không SSH |
+| PC Bluetooth (USB dongle) | **Scan**, **Paired devices** | Tìm thiết bị bằng dongle của PC |
+| | **Pair**, **Unpair** | Pair hoặc bỏ pair với địa chỉ đang chọn. Tick **Board accepts the pairing (over SSH)** thì board tự xác nhận. Mã numeric comparison hiện trong **Log** (`Passkey (numeric comparison): …`) |
+| Target | **Board BT address**, **RFCOMM channel** | `auto` = hỏi board qua SSH. Không SSH: nhập số channel (22) |
 
-### Tab 2: Throughput
-- **Chiều đo**: PC → board (`tx`), board → PC (`rx`), hai chiều (`bidir`), echo/RTT (`echo`).
-- **Thông số**: thời gian (giây), block (byte/gói, 990 ≈ một gói RFCOMM), giới hạn Mbit/s, kiểm tra CRC.
-- **Bắt đầu đo / Dừng**: biểu đồ cập nhật mỗi 0.5 s. Bấm Dừng thì vẫn nhận được kết quả.
-- **Kết quả**: Mbit/s từng chiều, RTT, số gói mất và lỗi CRC. PASS khi không mất gói và không lỗi CRC.
-- **Lưu kết quả**: CSV và JSON của mọi lần đo trong phiên.
+### Tab `2. Throughput`
+- **Direction**: `PC → board` (`tx`), `board → PC` (`rx`), `both ways` (`bidir`), `echo / RTT` (`echo`).
+- **Parameters**:
+  - **Duration (s)**;
+  - **Block (byte)**: 990 ≈ một gói RFCOMM;
+  - **Rate limit Mbit/s**: để trống là không giới hạn;
+  - **Min Mbit/s (PASS)**: ngưỡng Mbit/s tối thiểu cho mỗi chiều đo được; để trống là không đặt ngưỡng;
+  - **Verify CRC of every block**.
+- **Start / Stop**: biểu đồ cập nhật mỗi 0.5 s. Bấm Stop thì vẫn nhận được kết quả.
+- **Result**: Mbit/s từng chiều, RTT, `lost` và `CRC errors`.
+  - **PASS** khi không mất gói, không lỗi CRC, đúng thứ tự, và đạt **Min Mbit/s** (nếu có nhập).
+  - Khi FAIL, Log ghi rõ điều kiện không đạt, ví dụ `FAILED: PC->board 0.320 >= 1 Mbit/s`.
+- **Save results (CSV + JSON)…**: lưu mọi lần đo trong phiên. **Clear history**: xoá lịch sử.
 
-### Tab 3: Terminal
-- **Kết nối**: có SSH thì app chạy `ctt-agent pipe` trên board rồi nối RFCOMM tới đó. Không SSH thì nối vào channel đã nhập.
-- **Khung PC**: gõ rồi Enter để PC gửi. Bên dưới hiện `PC → board` (đã gửi) và `board → PC` (đã nhận).
-- **Khung Board** (chỉ khi có SSH): hiện `board nhận` (đúng các byte PC gửi tới), gõ vào đây để board gửi về PC.
-- **Dạng**: chữ hoặc hex. **Kết thúc dòng**: không / `\n` / `\r\n`.
+Bộ test case có ngưỡng Mbit/s (BT-TP-01…06) chạy bằng console (`suite`, menu 10), xem mục 3.
+
+### Tab `3. Terminal`
+- **Connect**: có SSH thì app chạy `ctt-agent pipe` trên board rồi nối RFCOMM tới đó. Không SSH thì nối vào channel đã nhập.
+- **Khung PC**: gõ rồi Enter (hoặc **Send PC → board**). Dòng `PC → board` là đã gửi, `board → PC` là đã nhận.
+- **Khung Board board (over SSH)** (chỉ khi có SSH):
+  - `board rx` là các byte board nhận được;
+  - gõ vào khung này rồi bấm **Board sends → PC** để board gửi về PC (dòng `board tx`).
+- **Format**: `Text` hoặc `Hex`. **Line end**: `(none)` / `\n` / `\r\n`.
 
 ## 3. Console: `ctt-agent-console.exe` <a id="console"></a>
 
 Chạy không có tham số sẽ mở menu:
 
 ```
+PC Bluetooth: Windows (WinRT): OK
+
 === CTT Bluetooth console 0.1.0 ===
 Board: SSH root@192.168.1.10 | BT: AA:BB:CC:DD:EE:01 | channel: auto
-  1) Cài đặt (SSH board / không SSH / địa chỉ BT / channel)
-  2) Kiểm tra board (SSH)
-  3) Deploy agent lên board (SSH)
+  1) Settings (board SSH / no SSH / BT address / channel)
+  2) Check board (SSH)
+  3) Deploy agent to the board (SSH)
   4) Scan Bluetooth
-  5) Thiết bị đã pair
-  6) Pair với board
-  7) Bỏ pair
-  8) Đo throughput / latency
-  9) Terminal: gửi / nhận dữ liệu
-  0) Thoát
+  5) Paired devices
+  6) Pair with the board
+  7) Unpair
+  8) Throughput / latency test
+  9) Terminal: send / receive data
+  10) Test suite with Mbit/s expectations (BT-TP-01..06)
+  0) Exit
+Choice:
 ```
 
 - Mỗi câu hỏi có giá trị mặc định trong `[...]`; nhấn Enter để giữ.
-- **4 / 5** (Scan, Thiết bị đã pair) cho phép chọn ngay một thiết bị làm board.
+- **1** (Settings): kiểm tra giá trị nhập và hỏi lại nếu sai. SSH phải có dạng `user@ip`, địa chỉ có dạng `AA:BB:CC:DD:EE:FF`, channel là `auto` hoặc 1–30.
+- **4 / 5** (Scan, Paired devices) cho phép chọn ngay một thiết bị làm board (`Use one of them as the board?`).
 - **8** (đo): Ctrl+C dừng sớm, kết quả vẫn được in ra.
 - **9** (terminal):
   - gõ dòng rồi Enter: PC gửi sang board;
   - `!abc`: board gửi `abc` về PC (cần SSH);
   - `/hex 48 65`: gửi byte dạng hex;
   - `/quit`: thoát.
+
+  Dữ liệu nhận hiện dạng `[PC rx] b'...'` (PC nhận) và `[board rx] b'...'` (board nhận, cần SSH).
+- **10** (test suite): chọn level `baseline` / `target`, chọn case (trống = tất cả). Kết quả lưu ở `ctt-results/suite-<level>-<thời điểm>.json` và `.csv`. Ngưỡng của từng case: [bt-test-cases.md](bt-test-cases.md#d-throughput-và-latency-có-ngưỡng-mbits).
 
 ### Lệnh con (dùng trong script / CI)
 
@@ -104,18 +123,24 @@ ctt-agent-console paired
 ctt-agent-console pair AA:BB:CC:DD:EE:01 --board root@192.168.1.10
 ctt-agent-console run --board root@192.168.1.10 -m bidir -d 20          :: tự deploy agent nếu thiếu
 ctt-agent-console run --addr AA:BB:CC:DD:EE:01 --channel 22 -m tx -d 30   :: không SSH
-ctt-agent-console run ... --json > result.json                              :: kết quả JSON
+ctt-agent-console run ... -m tx --min-up 1.0                               :: FAIL nếu PC->board < 1.0 Mbit/s
+ctt-agent-console run ... -m echo -b 64 --max-rtt-p99 100                  :: FAIL nếu RTT p99 > 100 ms
+ctt-agent-console run ... --json > result.json                              :: kết quả JSON (có "checks", "verdict")
+ctt-agent-console suite --list -l target                                    :: xem các case và ngưỡng
+ctt-agent-console suite --board root@192.168.1.10 -l baseline             :: chạy cả bộ BT-TP-01..06
+ctt-agent-console suite --addr AA:BB:CC:DD:EE:01 --channel 22 -l target --only BT-TP-01,BT-TP-02
+ctt-agent-console suite --dump > my-suite.json                              :: sửa ngưỡng rồi chạy với --file my-suite.json
 ctt-agent-console term --board root@192.168.1.10
 ctt-agent-console unpair AA:BB:CC:DD:EE:01
 ```
 
-`run` trả exit code 0 khi PASS và 1 khi FAIL. `ctt-bt.exe` nhận đúng các lệnh con này (ví dụ `ctt-bt run ...`). Trong WSL dùng `python3 -m ctt.btapp <lệnh>`.
+`run` và `suite` trả exit code 0 khi PASS, 1 khi FAIL. `ctt-bt.exe` nhận đúng các lệnh con này (ví dụ `ctt-bt run ...`). Trong WSL dùng `python3 -m ctt.btapp <lệnh>`.
 
 ## 4. Cài đặt
 
 **Windows**: không cần cài gì; chép 2 file `.exe` là chạy. Muốn SSH tới board thì cần SSH key mà board chấp nhận: lệnh `ssh root@<board>` phải chạy được trong PowerShell mà không hỏi mật khẩu.
 
-**Vào PC Windows qua SSH** (setup *Client Test*): bật OpenSSH Server trên PC đó, SSH vào rồi chạy `ctt-agent-console.exe`. Đừng chạy `ctt-bt.exe` qua SSH, vì cửa sổ sẽ không hiện ra.
+**Vào PC Windows qua SSH** (setup *Client Test*): bật OpenSSH Server trên PC đó, SSH vào rồi chạy `ctt-agent-console.exe`. Đừng chạy `ctt-bt.exe` qua SSH, vì cửa sổ sẽ không hiện ra. Console luôn in UTF-8, nên đọc được đúng chữ qua SSH.
 
 **WSL / Linux**: `sudo apt install python3-tk bluez`. Gắn dongle vào WSL bằng `scripts/usbipd-attach.ps1`. Nếu sau đó `hciconfig -a` vẫn trống, kiểm tra `lsusb` có thấy dongle không, module `btusb` đã nạp chưa và đã có firmware (`linux-firmware`) chưa; xem [wsl-setup.md](wsl-setup.md).
 
@@ -130,8 +155,9 @@ ctt-agent-console unpair AA:BB:CC:DD:EE:01
 | Hiện tượng | Nguyên nhân / cách xử lý |
 |---|---|
 | `RFCOMM connect …: [WinError 10060/10064]` | Chưa pair, board ngoài tầm, hoặc sai channel. Có SSH thì để channel `auto` |
-| `bad CTP magic` | Channel đó không phải `ctt-agent server` (ví dụ `bt_throughput_server`). Dùng Terminal |
+| `bad CTP magic` | Channel đó không phải `ctt-agent server` (ví dụ `bt_throughput_server`, hoặc board đang chạy `pipe`). Dùng Terminal |
 | Pair lỗi `CapacityReached` | bt-daemon đã đủ 5 bond: `ctt fw bt-unpair <addr>` hoặc `bt-daemon-cli.sh remove <addr>` |
-| Scan không thấy board | Board chưa discoverable: Pair có tick "Board tự chấp nhận", hoặc bật discoverable trên board qua UART |
+| Scan không thấy board | Board chưa discoverable: Pair có tick "Board accepts the pairing", hoặc bật discoverable trên board qua UART |
 | WSL: "no Bluetooth controller" | Dongle chưa gắn vào WSL (usbipd), `btusb` chưa nạp, hoặc thiếu firmware của dongle |
-| `board chưa có ctt-agent` | Kết nối → Deploy agent (menu 3), hoặc dùng lệnh `run` (tự deploy) |
+| `ctt-agent is not on the board` | Tab Connect → **Deploy agent** (console: menu 3), hoặc dùng lệnh `run` / `suite` (tự deploy) |
+| `FAIL` dù `lost 0 · CRC 0` | Không đạt ngưỡng Mbit/s hoặc RTT. Dòng `[FAIL] …` (console) hoặc `FAILED: …` (Log) cho biết ngưỡng nào |

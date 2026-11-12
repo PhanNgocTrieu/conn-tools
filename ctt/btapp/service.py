@@ -68,14 +68,14 @@ class TerminalSession:
         except OSError:
             pass
         if not self._closed:
-            self._on_closed("Board đã đóng kết nối")
+            self._on_closed("board closed the connection")
 
     def send_from_pc(self, data: bytes) -> None:
         self.sock.sendall(data)
 
     def send_from_board(self, data: bytes) -> None:
         if not self.target.pipe:
-            raise ServiceError("cần SSH tới board để board gửi dữ liệu")
+            raise ServiceError("board send needs SSH to the board")
         self.target.pipe.send(data)
 
     def close(self) -> None:
@@ -100,7 +100,7 @@ class BtTestService:
     def board(self) -> Board:
         target = self.settings.board.strip()
         if not target:
-            raise ServiceError("nhập SSH của board, vd root@192.168.1.10")
+            raise ServiceError("enter the board SSH, e.g. root@192.168.1.10")
         if not self._board or self._board.target != target:
             if self._board:
                 self._board.close()
@@ -120,7 +120,7 @@ class BtTestService:
         board = self.board()
         if not board.find_agent():
             if not auto_deploy:
-                raise ServiceError("board chưa có ctt-agent: tab Kết nối → Deploy agent")
+                raise ServiceError("ctt-agent is not on the board: Connect tab -> Deploy agent (console: menu 3)")
             board.deploy()
         return board
 
@@ -160,7 +160,7 @@ class BtTestService:
         addr = self.settings.address()
         if not self.settings.uses_ssh:
             if not addr:
-                raise ServiceError("nhập địa chỉ BT của board (tab Kết nối)")
+                raise ServiceError("enter the board Bluetooth address (Connect tab / console menu 1)")
             return Target(addr, self.settings.server_channel())
         board = self._board_with_agent(auto_deploy)
         b_addr, ch = board.start_server(self.settings.server_channel(), on_event=on_board_event)
@@ -171,7 +171,7 @@ class BtTestService:
         addr = self.settings.address()
         if not self.settings.uses_ssh:
             if not addr:
-                raise ServiceError("nhập địa chỉ BT của board")
+                raise ServiceError("enter the board Bluetooth address")
             return Target(addr, self.settings.server_channel())
         board = self._board_with_agent(auto_deploy)
         board.stop_server()   # the server may hold the channel

@@ -92,36 +92,55 @@ Mục đích là nhìn tận mắt dữ liệu đi đúng cả hai chiều.
 /tmp/ctt-agent pipe -t rfcomm -e /22
 ```
 
-**Client PC** (SSH): chạy `ctt-agent-console.exe`, vào menu **1** (Cài đặt), chọn **không SSH**, nhập `<ADDR>` và channel `22`, rồi vào menu **9** (Terminal).
+**Client PC** (SSH): chạy `ctt-agent-console.exe`, vào menu **1** (Settings), trả lời `SSH to the board?` = `n`, nhập `<ADDR>` và channel `22`, rồi vào menu **9** (Terminal: send / receive data).
 
 | Thử | Làm | Mong đợi |
 |---|---|---|
-| Kết nối | Mở menu 9 | Console: `Đã kết nối <ADDR> channel 22`. UART: `{"event":"connected",...}` |
+| Kết nối | Mở menu 9 | Console: `connected <ADDR> channel 22.` UART: `{"event":"connected",...}` |
 | PC → board | Gõ `hello board` rồi Enter | UART: `{"event":"rx",...,"hex":"68656c6c6f20626f6172640a"}` |
-| Board → PC | Trên UART gõ `6869205043` rồi Enter | Console: `board → PC [5 B] hi PC` |
+| Board → PC | Trên UART gõ `6869205043` rồi Enter | Console: `[PC rx] b'hi PC'` |
 | Nhị phân | `/hex 00 ff 55 aa 0d 0a` | UART: `"hex":"00ff55aa0d0a"`, đúng 6 byte |
 
 Thoát bằng `/quit` (console) và Ctrl+C (UART).
 
-## Bước 6: Đo throughput / latency (TC-10 → TC-13)
+## Bước 6: Đo throughput / latency có ngưỡng Mbit/s (TC-10 → TC-14)
 
 **UART:** dừng `pipe` nếu đang chạy, rồi:
 ```sh
-/tmp/ctt-agent server -t rfcomm -e /22 -i 1
+/tmp/ctt-agent server -t rfcomm -e /22 -i 1      # hoặc: systemctl start ctt-agent-bt
 ```
 
-**Client PC** (SSH):
+**Client PC** (SSH): chạy cả bộ BT-TP-01…06 với ngưỡng **target** (mục tiêu sản phẩm), mất khoảng 3 phút:
 ```
-ctt-agent-console.exe run --addr <ADDR> --channel 22 -m tx    -d 30 --json > tx.json
-ctt-agent-console.exe run --addr <ADDR> --channel 22 -m rx    -d 30 --json > rx.json
-ctt-agent-console.exe run --addr <ADDR> --channel 22 -m bidir -d 30 --json > bidir.json
-ctt-agent-console.exe run --addr <ADDR> --channel 22 -m echo  -d 10 -b 64 --json > echo.json
+ctt-agent-console.exe suite --addr <ADDR> --channel 22 -l target
 ```
 
-**Xong khi** mọi lần đo đều **PASS** (mất gói 0, lỗi CRC 0; lệnh trả exit code 0). Ghi Mbit/s và RTT p99 vào bảng ở cuối [bt-test-cases.md](bt-test-cases.md).
+| Case | Đo | Ngưỡng `target` |
+|---|---|---|
+| BT-TP-01 | PC → board, block 990, 30 s | ≥ 1.0 Mbit/s |
+| BT-TP-02 | board → PC, block 990, 30 s | ≥ 1.0 Mbit/s |
+| BT-TP-03 | hai chiều, block 990, 30 s | mỗi chiều ≥ 0.5 Mbit/s |
+| BT-TP-04 | echo, block 64, 10 s | RTT p99 ≤ 100 ms |
+| BT-TP-05 | PC → board, block 4096, 30 s | ≥ 1.0 Mbit/s |
+| BT-TP-06 | board → PC, block 4096, 30 s | ≥ 1.0 Mbit/s |
+
+Mọi case cũng phải có mất gói 0, lỗi CRC 0. Giải thích ngưỡng và level `baseline`: [bt-test-cases.md](bt-test-cases.md#d-throughput-và-latency-có-ngưỡng-mbits).
+
+Chạy riêng từng case:
+```
+ctt-agent-console.exe suite --addr <ADDR> --channel 22 -l target --only BT-TP-01
+ctt-agent-console.exe run   --addr <ADDR> --channel 22 -m tx -d 30 --min-up 1.0 --json > tx.json
+```
+
+**Xong khi** bảng tổng kết in `6/6 PASS` (exit code 0). Báo cáo nằm ở `ctt-results/suite-target-*.json` và `.csv` trên Client PC; chép về bằng `scp <user>@<client-pc>:ctt-results/* .`. Ghi số vào bảng ở cuối [bt-test-cases.md](bt-test-cases.md).
+
+Nếu case nào FAIL vì không đạt ngưỡng (ví dụ `PC->board 0.420 >= 1 Mbit/s`):
+- ghi lại con số đo được;
+- chạy `btmon` trên board trong lúc đo để xem loại gói ACL (2-DH5/3-DH5 hay DH1) và sniff mode;
+- so với level `baseline` (`-l baseline`) để biết board khách kém hơn hay tương đương setup Local Test.
 
 Muốn đo kỹ hơn thì chạy tiếp:
-- TC-14: block 990 / 2048 / 4096 / 8192, mỗi ô 3 lần × 30 s;
+- TC-14: thêm block 2048 / 8192 (`run -b …`), mỗi ô 3 lần × 30 s;
 - TC-15: dừng giữa chừng;
 - TC-16: `bidir` 600 s;
 - TC-17: mất và khôi phục kết nối;
@@ -140,7 +159,8 @@ Muốn đo kỹ hơn thì chạy tiếp:
 | Hiện tượng | Nguyên nhân / cách xử lý |
 |---|---|
 | `ctt-agent: not found` / `Exec format error` | Chép sai file, hoặc chưa `chmod +x`. Phải là bản `build/dut` (aarch64), không phải `build/host` |
-| `ctt-agent server -t rfcomm` lỗi khi bind/listen | Kernel không có RFCOMM socket, hoặc channel 22 đang bận. Thử `-e /23` và dùng `--channel 23` ở PC. Gửi log để xem tiếp |
+| `RFCOMM socket: … (kernel built without CONFIG_BT_RFCOMM?)` | Kernel không có RFCOMM: xem [yocto-recipe.md](yocto-recipe.md) bước 5 |
+| `rfcomm listen …/22: Address already in use` | Channel 22 đang bận (có thể `ctt-agent-bt.service` đang chạy). `systemctl stop ctt-agent-bt`, hoặc thử `-e /23` và dùng `--channel 23` ở PC |
 | Scan không thấy board | Chưa `set-discoverable true`, hoặc `hci0` đang DOWN |
 | Pair lỗi `CapacityReached` | Đủ 5 bond: `bt-daemon-cli.sh remove <addr>` |
 | `RFCOMM connect … [WinError 10060/10064]` | Chưa pair, sai channel, hoặc chưa chạy `ctt-agent server` / `pipe` trên board |

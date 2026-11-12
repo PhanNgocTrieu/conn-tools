@@ -141,7 +141,7 @@ class ConsoleMenuTest(unittest.TestCase):
         keys = ["1", "n", "", "", "4", "y", "1", "6", "", "0"]
         out, saved = self.run_menu(keys)
         self.assertIn("board", out)
-        self.assertIn("Mã xác nhận: 123456", out)
+        self.assertIn("Passkey: 123456", out)
         self.assertIn("OK  Pairing successful", out)
         self.assertTrue(saved.no_ssh)
         self.assertEqual(saved.bt_addr, "AA:BB:CC:DD:EE:01")
@@ -151,16 +151,16 @@ class ConsoleMenuTest(unittest.TestCase):
         # channel "99" -> auto
         keys = ["1", "maybe", "y", "y", "root@b", "Y", "aa:bb:cc:dd:ee:02", "99", "auto", "0"]
         out, saved = self.run_menu(keys)
-        self.assertIn("trả lời y hoặc n", out)
-        self.assertIn("cần dạng user@ip", out)
-        self.assertIn("cần dạng AA:BB:CC:DD:EE:FF", out)
-        self.assertIn("cần 'auto' hoặc số từ 1 đến 30", out)
+        self.assertIn("answer y or n", out)
+        self.assertIn("expected user@ip", out)
+        self.assertIn("expected AA:BB:CC:DD:EE:FF", out)
+        self.assertIn("expected 'auto' or a number 1-30", out)
         self.assertEqual((saved.board, saved.bt_addr, saved.channel),
                          ("root@b", "AA:BB:CC:DD:EE:02", "auto"))
 
     def test_invalid_choice_and_eof(self):
         out, _ = self.run_menu(["x"])          # then end of input = Ctrl+D
-        self.assertIn("Lựa chọn không hợp lệ", out)
+        self.assertIn("Invalid choice", out)
 
 
 if __name__ == "__main__":

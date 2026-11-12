@@ -19,7 +19,7 @@
 Hai điểm khác biệt quyết định cách test:
 
 1. **Phần cứng Bluetooth khác nhau.** Ở LT, board dùng dongle USB chứ không dùng chip trên board, nên số đo ở LT **không phải số của sản phẩm**. LT dùng để chứng minh tool và quy trình đúng, và để có số tham chiếu; số dùng để chấp nhận (acceptance) phải lấy ở CT.
-2. **CT không có SSH tới board.** App không tự chạy agent, tự xác nhận pairing hay mở pipe trên board được. Mọi thao tác phía board ở CT làm **thủ công qua UART** (hoặc bằng service đã cài sẵn trong image), và app chạy ở chế độ **Không dùng SSH**.
+2. **CT không có SSH tới board.** App không tự chạy agent, tự xác nhận pairing hay mở pipe trên board được. Mọi thao tác phía board ở CT làm **thủ công qua UART** (hoặc bằng service đã cài sẵn trong image), và app chạy ở chế độ **No SSH** (GUI: tick "No SSH"; console: menu 1, `SSH to the board?` = `n`).
 
 ## 2. Mục tiêu
 
@@ -54,7 +54,7 @@ Hai điểm khác biệt quyết định cách test:
 ### Giai đoạn 2: Chuẩn bị Client Test
 | Việc | Cách làm |
 |---|---|
-| Có agent trên board mà không cần mạng | Đưa `ctt-agent` vào image bằng `yocto/meta-ctt` và bật `ctt-agent-bt.service` (channel 22). Tạm thời có thể copy bằng USB stick, hoặc truyền qua UART (`lrzsz`, base64) |
+| Có agent trên board mà không cần mạng | Đưa `ctt-agent` vào image (recipe trong `meta-project`, xem [yocto-recipe.md](yocto-recipe.md)) và bật `ctt-agent-bt.service` (channel 22). Tạm thời có thể copy bằng USB stick, hoặc truyền qua UART (`lrzsz`, base64) |
 | Truy cập Client PC | Bật OpenSSH Server trên Client PC; copy `ctt-agent-console.exe` sang; cắm dongle |
 | Truy cập UART | Mở terminal serial (PuTTY / `screen /dev/ttyUSB0 115200`) tới board, đăng nhập root |
 | Thủ tục pairing phía board | `bt-daemon-cli.sh set-pairable true / set-discoverable true / confirm-pairing` (xem [bt-app.md](bt-app.md#chuẩn-bị-board-khi-không-có-ssh)) |
@@ -64,13 +64,13 @@ Hai điểm khác biệt quyết định cách test:
 ### Giai đoạn 3: Client Test (số của sản phẩm)
 Hướng dẫn từng bước: [bt-client-test.md](bt-client-test.md).
 
-- Chạy lại bộ test case ở chế độ **Không dùng SSH** bằng `ctt-agent-console.exe`. Cột "CT" trong [bt-test-cases.md](bt-test-cases.md) ghi rõ phần nào làm thủ công trên UART.
-- Ghi kết quả bằng `ctt-agent-console run ... --json`, cộng log UART và `btmon` của board.
+- Chạy lại bộ test case ở chế độ **No SSH** bằng `ctt-agent-console.exe`. Cột "CT" trong [bt-test-cases.md](bt-test-cases.md) ghi rõ phần nào làm thủ công trên UART.
+- Đo có ngưỡng: `ctt-agent-console suite --addr <ADDR> --channel 22 -l target` (BT-TP-01…06, tự lưu JSON + CSV), cộng log UART và `btmon` của board.
 
-**Điều kiện qua:** đạt tiêu chí ở mục 5.
+**Điều kiện qua:** `suite -l target` báo `6/6 PASS`, và đạt các tiêu chí khác ở mục 5.
 
 ### Giai đoạn 4: Regression
-Với mỗi build firmware mới, chạy lại: TC-05 (pair), TC-10…TC-13 (throughput, echo) và TC-16 (long run 10 phút). So sánh với kết quả của build trước.
+Với mỗi build firmware mới, chạy lại: TC-05 (pair), `suite -l baseline` (LT) hoặc `-l target` (CT) cho TC-10…TC-14, và TC-16 (long run 10 phút). So sánh file `ctt-results/suite-*.csv` với kết quả của build trước.
 
 ## 4. Ma trận: test case × setup × app
 
@@ -84,14 +84,14 @@ Với mỗi build firmware mới, chạy lại: TC-05 (pair), TC-10…TC-13 (thr
 | Ổn định | TC-15 dừng giữa chừng, TC-16 long run, TC-17 reconnect | ✔ | ✔ | ✔ |
 | Báo cáo | TC-19 lưu kết quả | ✔ | `--json` | `--json` |
 
-## 5. Tiêu chí PASS (đề xuất, chốt sau Giai đoạn 1)
+## 5. Tiêu chí PASS (ngưỡng đã có trong tool, chốt lại sau Giai đoạn 1)
 
 | Chỉ số | Tiêu chí |
 |---|---|
 | Toàn vẹn dữ liệu (mọi test) | mất gói = 0, lỗi CRC = 0, sai thứ tự = 0 |
 | Pairing | ≥ 98% thành công trên 50 lần (pair-stress) |
-| Throughput mỗi chiều | ≥ X Mbit/s. **X lấy từ CT ở Giai đoạn 3**, không lấy từ LT. Tham khảo: RFCOMM thực tế trên EDR thường đạt 1.5–2 Mbit/s |
-| RTT (`echo`, block 64 B) | p99 ≤ Y ms (đặt sau Giai đoạn 1) |
+| Throughput mỗi chiều | Level `target`: PC→board và board→PC **≥ 1.0 Mbit/s** (block 990 và 4096); `bidir` mỗi chiều **≥ 0.5 Mbit/s**. Level `baseline` (regression của LT): PC→board ≥ 0.25, board→PC ≥ 0.40 Mbit/s. Bảng đầy đủ: [bt-test-cases.md](bt-test-cases.md#d-throughput-và-latency-có-ngưỡng-mbits) |
+| RTT (`echo`, block 64 B) | p99 ≤ 100 ms (`target`), ≤ 250 ms (`baseline`). Chốt lại sau Giai đoạn 1 |
 | Long run | 10 phút `bidir` không rớt kết nối; throughput không giảm quá 20% so với phút đầu |
 
 ## 6. Ghi nhận mỗi lần đo
@@ -106,7 +106,7 @@ Với mỗi build firmware mới, chạy lại: TC-05 (pair), TC-10…TC-13 (thr
 |---|---|---|---|
 | 1 | **Điều khiển board qua UART** | CT phải làm tay: chạy agent, xác nhận pairing, mở pipe | Thêm `SerialBoard` cùng interface với `Board` (chạy lệnh qua cổng COM). `BtTestService` không phải đổi, chỉ cần chọn kiểu kết nối board |
 | 2 | Đưa agent lên board qua UART | Phải dùng image có sẵn agent, hoặc USB stick | Ưu tiên image có `meta-ctt` |
-| 3 | Console chưa có lệnh lưu lịch sử như nút "Lưu kết quả" của GUI | Phải dùng `--json` mỗi lần | Thêm lựa chọn lưu CSV/JSON vào menu |
+| 3 | ~~Console chưa lưu kết quả như nút "Save results" của GUI~~ | Đã có: `suite` và menu 10 tự lưu JSON + CSV vào `ctt-results/` | – |
 | 4 | Long run / reconnect chưa tự động | TC-16, TC-17 làm tay | Thêm vòng lặp `run` có đếm số lần kết nối lại |
 | 5 | Throughput đo được trên Windows thấp (0.3–0.6 Mbit/s, xem `report.md`) | Chưa biết giới hạn nằm ở đâu | Làm baseline ở Giai đoạn 1 bước 1 và 3 trước khi kết luận |
 

@@ -34,7 +34,7 @@ class MainWindow:
         top = ttk.Frame(root, padding=(10, 8))
         top.pack(fill="x")
         ttk.Label(top, text="CTT Bluetooth Test", font=("Segoe UI", 13, "bold")).pack(side="left")
-        self.status = ttk.Label(top, text="Sẵn sàng", style="Cap.TLabel")
+        self.status = ttk.Label(top, text="Ready", style="Cap.TLabel")
         self.status.pack(side="right")
 
         paned = ttk.PanedWindow(root, orient="vertical")
@@ -54,8 +54,8 @@ class MainWindow:
             self.tabs.append(tab)
 
         root.protocol("WM_DELETE_WINDOW", self.on_close)
-        self.log(f"Bluetooth trên PC: {self.service.pairing.name}"
-                 f"{'' if bluetooth_supported() else ' (Python này không có socket RFCOMM!)'}")
+        self.log(f"PC Bluetooth: {self.service.pairing.name}"
+                 f"{'' if bluetooth_supported() else ' (this Python has no RFCOMM sockets!)'}")
         dispatcher.background(self.service.pairing_status, self.tabs[0].show_backend_status)
 
     @staticmethod
@@ -88,6 +88,6 @@ class MainWindow:
         self.service.stop_throughput()
         terminal = next(t for t in self.tabs if isinstance(t, TerminalTab))
         if terminal.session:
-            terminal.close("đóng app")
+            terminal.close("app closed")
         threading.Thread(target=self.service.close, daemon=True).start()
         self.root.after(300, self.root.destroy)

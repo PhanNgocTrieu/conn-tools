@@ -11,7 +11,7 @@ from ctt.btapp.gui.context import AppContext
 from ctt.btapp.service import TerminalSession
 
 PC_TX, PC_RX, BOARD_TX = "#1d4ed8", "#15803d", "#b45309"
-EOL = {"(không)": "", "\\n": "\n", "\\r\\n": "\r\n"}
+EOL = {"(none)": "", "\\n": "\n", "\\r\\n": "\r\n"}
 
 
 class TerminalPane(ttk.LabelFrame):
@@ -64,13 +64,13 @@ class TerminalTab(ttk.Frame):
         self.columnconfigure(1, weight=1)
         self.rowconfigure(1, weight=1)
         self._toolbar().grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        self.pc = TerminalPane(self, "PC (máy tính)", "Gửi từ PC → board", self.on_pc_send)
+        self.pc = TerminalPane(self, "PC", "Send PC → board", self.on_pc_send)
         self.pc.grid(row=1, column=0, sticky="nsew", padx=(0, 6))
-        self.bd = TerminalPane(self, "Board board (qua SSH)", "Board gửi → PC", self.on_board_send)
+        self.bd = TerminalPane(self, "Board board (over SSH)", "Board sends → PC", self.on_board_send)
         self.bd.grid(row=1, column=1, sticky="nsew", padx=(6, 0))
-        ttk.Label(self, text="Có SSH: board chạy `ctt-agent pipe`, nên thấy được cả dữ liệu board nhận và gõ "
-                             "được dữ liệu board gửi. Không dùng SSH: PC nối vào channel đã nhập (server RFCOMM "
-                             "bất kỳ trên board), chỉ dùng được khung PC.",
+        ttk.Label(self, text="With SSH the board runs `ctt-agent pipe`: you see what the board receives and can type what "
+                             "the board sends. Without SSH the PC connects to the channel entered on the Connect tab "
+                             "(any RFCOMM server on the board) and only the PC pane is used.",
                   style="Cap.TLabel", wraplength=1000).grid(row=3, column=0, columnspan=2, sticky="w",
                                                             pady=(6, 0))
 
@@ -79,15 +79,15 @@ class TerminalTab(ttk.Frame):
 
     def _toolbar(self):
         bar = ttk.Frame(self)
-        self.btn = ttk.Button(bar, text="Kết nối", style="Accent.TButton", command=self.on_toggle)
+        self.btn = ttk.Button(bar, text="Connect", style="Accent.TButton", command=self.on_toggle)
         self.btn.pack(side="left")
-        ttk.Label(bar, text="  Dạng:").pack(side="left")
-        ttk.Radiobutton(bar, text="Chữ", value="text", variable=self.v_fmt).pack(side="left")
+        ttk.Label(bar, text="  Format:").pack(side="left")
+        ttk.Radiobutton(bar, text="Text", value="text", variable=self.v_fmt).pack(side="left")
         ttk.Radiobutton(bar, text="Hex", value="hex", variable=self.v_fmt).pack(side="left")
-        ttk.Label(bar, text="  Kết thúc dòng:").pack(side="left")
+        ttk.Label(bar, text="  Line end:").pack(side="left")
         ttk.Combobox(bar, textvariable=self.v_eol, values=list(EOL), width=7,
                      state="readonly").pack(side="left")
-        self.info = ttk.Label(bar, text="Chưa kết nối", style="Cap.TLabel")
+        self.info = ttk.Label(bar, text="Not connected", style="Cap.TLabel")
         self.info.pack(side="right")
         return bar
 
@@ -104,10 +104,10 @@ class TerminalTab(ttk.Frame):
 
     def on_toggle(self):
         if self.session:
-            return self.close("Đã ngắt kết nối")
+            return self.close("Disconnected")
         self.ctx.sync_settings()
         self.btn.configure(state="disabled")
-        self.ctx.set_status("Đang mở terminal…")
+        self.ctx.set_status("Opening terminal…")
         ui = self.ctx.dispatcher.ui
         self.ctx.dispatcher.background(
             lambda: self.ctx.service.open_terminal(
@@ -119,12 +119,12 @@ class TerminalTab(ttk.Frame):
     def _opened(self, session: TerminalSession):
         self.session = session
         t = session.target
-        self.btn.configure(text="Ngắt kết nối", state="normal")
-        self.info.configure(text=f"Đã kết nối {t.address} channel {t.channel}")
-        self.pc.meta(f"— kết nối tới {t.address} / channel {t.channel}")
+        self.btn.configure(text="Disconnect", state="normal")
+        self.info.configure(text=f"Connected {t.address} channel {t.channel}")
+        self.pc.meta(f"— connected to {t.address} / channel {t.channel}")
         if not session.has_board_side:
-            self.bd.meta("— (không có SSH: không xem được phía board)")
-        self.ctx.set_status("Terminal đã kết nối")
+            self.bd.meta("— (no SSH: the board side is not visible)")
+        self.ctx.set_status("Terminal connected")
 
     def _open_failed(self, e):
         self.btn.configure(state="normal")
@@ -138,19 +138,19 @@ class TerminalTab(ttk.Frame):
         session, self.session = self.session, None
         if session:
             threading.Thread(target=session.close, daemon=True).start()
-        self.btn.configure(text="Kết nối", state="normal")
-        self.info.configure(text="Chưa kết nối")
+        self.btn.configure(text="Connect", state="normal")
+        self.info.configure(text="Not connected")
         self.pc.meta(f"— {why}")
         self.ctx.set_status(why)
 
     def _on_board_event(self, ev):
         e = ev.get("event")
         if e == "rx":
-            self.bd.data("board nhận", ev.get("data", b""), "pc_tx", self.as_hex)
+            self.bd.data("board rx", ev.get("data", b""), "pc_tx", self.as_hex)
         elif e == "connected":
-            self.bd.meta(f"— PC đã kết nối: {ev.get('peer')}")
+            self.bd.meta(f"— PC connected: {ev.get('peer')}")
         elif e == "listening":
-            self.bd.meta(f"— board đang chờ trên channel {ev.get('channel')}")
+            self.bd.meta(f"— board listening on channel {ev.get('channel')}")
         elif e in ("closed", "error"):
             self.bd.meta(f"— {ev.get('reason') or ev.get('message')}")
 
@@ -160,31 +160,31 @@ class TerminalTab(ttk.Frame):
         try:
             return self._payload(pane.var.get())
         except ValueError:
-            messagebox.showerror("Hex", "Chuỗi hex không hợp lệ")
+            messagebox.showerror("Hex", "Invalid hex string")
             return None
 
     def on_pc_send(self):
         if not self.session:
-            return self.ctx.log("Terminal chưa kết nối", "err")
+            return self.ctx.log("Terminal is not connected", "err")
         data = self._read(self.pc)
         if data is None:
             return
         try:
             self.session.send_from_pc(data)
         except OSError as e:
-            return self.close(f"Gửi lỗi: {e}")
+            return self.close(f"Send failed: {e}")
         self.pc.data("PC → board", data, "pc_tx", self.as_hex)
         self.pc.var.set("")
 
     def on_board_send(self):
         if not self.session or not self.session.has_board_side:
-            return self.ctx.log("Cần SSH tới board để board gửi dữ liệu", "err")
+            return self.ctx.log("Board send needs SSH to the board", "err")
         data = self._read(self.bd)
         if data is None:
             return
         session = self.session
 
         def sent(_r):
-            self.bd.data("board gửi", data, "bd_tx", self.as_hex)
+            self.bd.data("board tx", data, "bd_tx", self.as_hex)
             self.bd.var.set("")
         self.ctx.dispatcher.background(lambda: session.send_from_board(data), sent)

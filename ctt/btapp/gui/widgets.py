@@ -14,7 +14,7 @@ UP, DOWN, RTT = "#2563eb", "#16a34a", "#9333ea"
 
 class LogPanel(ttk.LabelFrame):
     def __init__(self, master):
-        super().__init__(master, text="Nhật ký", padding=4)
+        super().__init__(master, text="Log", padding=4)
         self.box = tk.Text(self, height=7, state="disabled", wrap="word", font=("Consolas", 9))
         sb = ttk.Scrollbar(self, command=self.box.yview)
         self.box.configure(yscrollcommand=sb.set)

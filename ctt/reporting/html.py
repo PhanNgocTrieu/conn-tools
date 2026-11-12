@@ -164,7 +164,7 @@ def render_html(run_dir: Path) -> str:
                    f"<td>{_fmt(r.get('transport'))}</td><td>{_fmt(r.get('mode'))}</td>"
                    + "".join(f"<td class='n'>{_fmt(r.get(k))}</td>" for k, _ in cols)
                    + f"<td class='{r.get('verdict')}'>{r.get('verdict')}</td></tr>")
-    out.append("</table></div><h2>Chi tiết</h2>")
+    out.append("</table></div><h2>Details</h2>")
 
     for i, t in enumerate(tests, 1):
         r, data = t["row"], t["data"]
@@ -189,7 +189,7 @@ def render_html(run_dir: Path) -> str:
         if data.get("result", {}) and isinstance(data["result"], dict) and data["result"].get("link"):
             extra["link"] = data["result"]["link"]
         if extra:
-            out.append("<details><summary>Link / môi trường</summary><pre>"
+            out.append("<details><summary>Link / environment</summary><pre>"
                        + html.escape(json.dumps(extra, indent=2, ensure_ascii=False)) + "</pre></details>")
         out.append("</div>")
     out.append("</body></html>")

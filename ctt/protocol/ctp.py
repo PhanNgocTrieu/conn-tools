@@ -28,7 +28,7 @@ MAX_PAYLOAD = 1 << 20
 
 T_START, T_START_ACK, T_DATA, T_STOP, T_STATS, T_ECHO_REQ, T_ECHO_RSP, T_ERROR = range(1, 9)
 MODES = {"tx": 1, "rx": 2, "bidir": 3, "echo": 4}
-MODE_LABELS = {"tx": "PC → board", "rx": "board → PC", "bidir": "hai chiều", "echo": "echo / RTT"}
+MODE_LABELS = {"tx": "PC → board", "rx": "board → PC", "bidir": "both ways", "echo": "echo / RTT"}
 
 
 class CtpError(RuntimeError):
