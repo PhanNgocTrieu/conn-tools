@@ -8,3 +8,5 @@ __pycache__/
 .venv/
 # MFi register maps / Apple NDA material must never be committed
 *.private.yaml
+dist/
+.venv-win/

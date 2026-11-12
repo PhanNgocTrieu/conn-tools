@@ -43,7 +43,22 @@ python3 -m ctt selftest            # tự kiểm tra tool qua TCP loopback, khô
 scripts/build-dut.sh --generic --static --strip   # build ctt-agent cho board (aarch64)
 ```
 
-Build app Windows: chạy `.\scripts\build-btapp.ps1 -Agent <ctt-agent aarch64>` trong PowerShell, hoặc để GitHub Actions build ([.github/workflows/btapp.yml](.github/workflows/btapp.yml)).
+### Build file `.exe` trên máy (không cần push)
+
+Cần Python 3.10+ cho **Windows** (`winget install Python.Python.3.12`). Lệnh `python` có sẵn trong WindowsApps chỉ là lối tắt tới Store, không dùng được. Kết quả nằm ở `dist/`.
+
+| Muốn build | Từ WSL | Từ PowerShell (ở thư mục repo) |
+|---|---|---|
+| Chỉ `ctt-agent-console.exe` | `scripts/build-windows.sh console` | `.\scripts\build-console.ps1` |
+| Chỉ `ctt-bt.exe` | `scripts/build-windows.sh gui` | `.\scripts\build-btapp.ps1 -Only gui` |
+| Cả hai | `scripts/build-windows.sh` | `.\scripts\build-btapp.ps1` |
+
+- Muốn app deploy được agent lên board thì phải nhúng agent aarch64 vào: build agent trước bằng `scripts/build-dut.sh --generic --static --strip`.
+  - Bản WSL tự lấy `build/dut/agent/ctt-agent`.
+  - Bản PowerShell: thêm `-Agent <đường dẫn>`.
+- Script tạo venv riêng `.venv-win` nên Python hệ thống không bị đụng tới.
+- Bản WSL copy mã nguồn sang `%LOCALAPPDATA%\ctt-build` rồi build ở đó, vì PyInstaller chạy không ổn định trên đường dẫn `\\wsl.localhost`.
+- GitHub Actions cũng build cả 3 file ([.github/workflows/btapp.yml](.github/workflows/btapp.yml)).
 
 ## CLI `ctt` (WiFi / BT / USB / MFi)
 
