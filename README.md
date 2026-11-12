@@ -18,6 +18,7 @@ Bộ công cụ đo **throughput, latency và độ toàn vẹn dữ liệu** c�
 | Test Bluetooth PC ↔ board bằng app (GUI hoặc console) | [docs/bt-app.md](docs/bt-app.md) |
 | Biết nên test Bluetooth theo cách nào với setup hiện tại | [docs/bt-test-plan.md](docs/bt-test-plan.md) |
 | Chạy từng test case Bluetooth, từ kết nối đến gửi dữ liệu | [docs/bt-test-cases.md](docs/bt-test-cases.md) |
+| Test Bluetooth trên **board khách hàng** (chỉ có UART), từng bước | [docs/bt-client-test.md](docs/bt-client-test.md) |
 | Test WiFi / USB / MFi bằng CLI `ctt` | [docs/TESTING.md](docs/TESTING.md) |
 | Cài môi trường WSL | [docs/wsl-setup.md](docs/wsl-setup.md) |
 

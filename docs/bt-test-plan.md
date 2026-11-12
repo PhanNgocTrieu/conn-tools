@@ -62,6 +62,8 @@ Hai điểm khác biệt quyết định cách test:
 **Điều kiện qua:** từ Local PC, SSH vào Client PC chạy được `ctt-agent-console.exe --version`; trên UART, `ctt-agent version` chạy được.
 
 ### Giai đoạn 3: Client Test (số của sản phẩm)
+Hướng dẫn từng bước: [bt-client-test.md](bt-client-test.md).
+
 - Chạy lại bộ test case ở chế độ **Không dùng SSH** bằng `ctt-agent-console.exe`. Cột "CT" trong [bt-test-cases.md](bt-test-cases.md) ghi rõ phần nào làm thủ công trên UART.
 - Ghi kết quả bằng `ctt-agent-console run ... --json`, cộng log UART và `btmon` của board.
 
