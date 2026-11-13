@@ -1,200 +1,298 @@
-# CTT: Connectivity Test Tool
+# CTT — Connectivity Test Tool
 
-Bộ công cụ đo **throughput, latency và độ toàn vẹn dữ liệu** của Bluetooth, WiFi, USB và MFi trên **board Linux** (Yocto, Buildroot, Debian…; aarch64 hoặc x86_64), với PC Windows hoặc Linux.
+[![CI](https://github.com/PhanNgocTrieu/conn-tools/actions/workflows/btapp.yml/badge.svg?branch=main)](https://github.com/PhanNgocTrieu/conn-tools/actions/workflows/btapp.yml)
+[![Release](https://img.shields.io/github/v/release/PhanNgocTrieu/conn-tools?sort=semver)](https://github.com/PhanNgocTrieu/conn-tools/releases)
+![Board](https://img.shields.io/badge/board-Linux%20aarch64%20%7C%20x86__64-informational)
+![PC](https://img.shields.io/badge/PC-Windows%20%7C%20Linux-informational)
 
-## Thành phần
+CTT measures **throughput, latency and data integrity** of connectivity links between an embedded **Linux board** and a **PC**. The links are Bluetooth Classic, Bluetooth Low Energy, WiFi, Ethernet, USB and I2C.
 
-| Thành phần | Chạy ở đâu | Dùng để làm gì |
-|---|---|---|
-| `ctt-agent.exe` | PC Windows (hoặc `python3 -m ctt.btapp` trong WSL) | App **cửa sổ** test Bluetooth: pair, đo throughput có biểu đồ, terminal gửi/nhận dữ liệu. Giao diện tiếng Anh |
-| `ctt-agent-console.exe` | PC Windows, kể cả khi vào máy đó qua SSH | Giống `ctt-agent.exe` nhưng **chỉ dùng console**: có menu và các lệnh con |
-| `ctt-agent` | Board (aarch64) và PC Linux | Đầu đo (C++), dùng giao thức chung [CTP](docs/ctp-spec.md). Trên release có tên `ctt-agent-aarch64` (board) và `ctt-agent-x86_64` (Linux / WSL) |
-| `ctt` | WSL / Linux | CLI test mọi giao tiếp (WiFi, BT, USB, MFi), xuất report HTML/JUnit |
+Every test checks the sequence number and CRC of each block, and prints a live trace on both ends once per second. Results are written in machine-readable formats (JSON, CSV, JUnit, HTML).
 
-## Chạy trên board nào?
+> The detailed guides in [`docs/`](docs) are written in Vietnamese.
 
-Mọi board Linux có ngăn xếp chuẩn: systemd, BlueZ (bluetoothd), USB gadget qua configfs, WiFi nl80211. Agent trên board là một file static (`ctt-agent-aarch64`, hoặc tự build cho kiến trúc khác) và không cần thư viện nào.
+---
 
-Phần riêng của từng board/sản phẩm khai báo trong một **board profile** (YAML), không nằm trong code. Ví dụ: daemon Bluetooth/USB/WiFi riêng, cách board chấp nhận pairing, giới hạn số bond, lệnh trạng thái riêng.
-- Mẫu: [configs/board.example.yaml](configs/board.example.yaml).
-- Bản của dự án đặt ở `configs/board.private.yaml`, file này đã được gitignore. Có thể chỉ định file khác bằng `--board-profile FILE` hoặc biến `CTT_BOARD_PROFILE`.
-- Không có profile thì CTT dùng BlueZ mặc định.
-- Xem profile đang dùng: `python3 -m ctt board status --dut root@<board-ip>`.
+## Contents
 
-## Bắt đầu từ đâu?
+- [Features](#features)
+- [Architecture](#architecture)
+- [Supported platforms](#supported-platforms)
+- [Installation](#installation)
+- [Quick start](#quick-start)
+- [Results and reports](#results-and-reports)
+- [Board profile](#board-profile)
+- [Documentation](#documentation)
+- [Development](#development)
+- [Status and known limitations](#status-and-known-limitations)
 
-| Bạn muốn… | Đọc |
-|---|---|
-| Test Bluetooth PC ↔ board bằng app (GUI hoặc console) | [docs/bt-app.md](docs/bt-app.md) |
-| Test **BLE** (GATT trên Windows / Linux, L2CAP CoC trên Linux) | [docs/bt-ble.md](docs/bt-ble.md) |
-| Biết nên test Bluetooth theo cách nào với setup hiện tại | [docs/bt-test-plan.md](docs/bt-test-plan.md) |
-| Chạy từng test case Bluetooth, từ kết nối đến gửi dữ liệu | [docs/bt-test-cases.md](docs/bt-test-cases.md) |
-| Test Bluetooth trên **board khách hàng** (chỉ có UART), từng bước | [docs/bt-client-test.md](docs/bt-client-test.md) |
-| Đưa `ctt-agent` vào image Yocto của board | [docs/yocto-recipe.md](docs/yocto-recipe.md) |
-| Tải bản build sẵn, tạo release `vX.Y.Z` | [docs/release.md](docs/release.md) |
-| Test WiFi / USB / MFi bằng CLI `ctt` | [docs/TESTING.md](docs/TESTING.md) |
-| Cài môi trường WSL | [docs/wsl-setup.md](docs/wsl-setup.md) |
+---
 
-## Test Bluetooth nhanh (Windows)
+## Features
 
-1. Tải `ctt-agent.exe` và `ctt-agent-console.exe`:
-   - bản chính thức: trang **Releases** → `vX.Y.Z`;
-   - bản mới nhất của `main`: pre-release **`latest-main`** (GitHub Actions build lại mỗi lần push lên `main`);
-   - mỗi release có `ctt-agent.exe`, `ctt-agent-console.exe`, `ctt-agent-aarch64` (board), `ctt-agent-x86_64` (Linux / WSL), `SHA256SUMS` và source. Xem [docs/release.md](docs/release.md);
-   - hoặc tự build trên máy: `scripts/build-all.sh`.
-2. Cắm USB Bluetooth dongle vào PC. Dongle phải do Windows quản lý, không gắn vào WSL.
-3. Mở `ctt-agent.exe` (giao diện tiếng Anh), rồi ở tab **1. Connect**:
-   - nhập SSH của board → **Check board**;
-   - nếu agent là `MISSING` → **Deploy agent**;
-   - **Scan** → chọn board → **Pair**.
-4. Tab **2. Throughput**: chọn **Direction**, nhập **Min Mbit/s (PASS)** nếu cần → **Start**. Kết quả PASS khi `lost 0 · CRC errors 0` và đạt Min Mbit/s.
-5. Tab **3. Terminal**: **Connect**, gõ ở khung PC (PC gửi sang board) và khung Board (board gửi về PC).
-6. Bộ test case có ngưỡng Mbit/s (BT-TP-01…06): `ctt-agent-console.exe suite --board root@<board-ip> -l baseline`. Board khách chỉ có UART: làm theo [docs/bt-test-cases.md](docs/bt-test-cases.md) (board UART + console qua SSH, hoặc board UART + GUI).
+- **One test protocol for every link.**
+  - [CTP](docs/ctp-spec.md) runs over RFCOMM, L2CAP (BR/EDR and LE CoC), BLE GATT, TCP, UDP, USB bulk (FunctionFS) and AF_UNIX.
+  - The same four modes work on every link: `tx`, `rx`, `bidir` and `echo`.
+- **Integrity is always checked.**
+  - Every block carries a sequence number and a CRC32.
+  - Results always report lost blocks, CRC errors and out-of-order blocks, next to Mbit/s and RTT (min / avg / p50 / p95 / p99 / max).
+- **Live monitoring.**
+  - Board and PC both print, once per second, the rate and the bytes/frames sent and received so far.
+  - At the end, a `data:` line compares the totals of both ends.
+- **Test suites.**
+  - Bluetooth Classic: BT-TP-01…06. BLE: BLE-TP-01…06.
+  - Level `measure` (default) only records the numbers. Levels `baseline` and `target` add PASS/FAIL on Mbit/s and RTT limits.
+  - Limits can be overridden from a JSON file.
+- **Windows apps.**
+  - `ctt-agent.exe` is a desktop app. `ctt-agent-console.exe` has a menu and scriptable sub-commands, and also works over SSH.
+  - Both detect which links the PC supports.
+- **Dependency-free agent.**
+  - `ctt-agent` is a single static C++17 binary that only uses kernel interfaces.
+  - For BLE GATT it talks to bluetoothd through its own built-in D-Bus client.
+- **Board-agnostic.** Product-specific behaviour is declared in a [board profile](#board-profile), not in the code.
+- **CI and Yocto ready.**
+  - Exit codes, JUnit reports and baseline comparison for CI.
+  - For Yocto: a recipe that fetches with git, a recipe that ships its source in your layer, and systemd services.
 
-Không có cửa sổ (đang SSH vào PC): chạy `ctt-agent-console.exe` rồi làm theo menu, xem [docs/bt-app.md](docs/bt-app.md#console).
+## Architecture
 
-## Môi trường phát triển (WSL / Linux)
-
-```bash
-scripts/setup-wsl.sh --install     # cài gói (lần đầu, cần sudo)
-scripts/build-host.sh              # build ctt-agent cho PC và chạy toàn bộ test
-python3 -m ctt selftest            # tự kiểm tra tool qua TCP loopback, không cần board
-scripts/build-dut.sh --generic --static --strip   # build ctt-agent cho board (aarch64)
+```
+        PC (Windows / Linux)                                    Board (Linux)
+ ┌──────────────────────────────────┐                ┌──────────────────────────────┐
+ │ ctt-agent.exe / -console.exe     │                │ ctt-agent (C++17, static)    │
+ │   CtpClient: tx/rx/bidir/echo    │    RFCOMM      │   server : CTP measurements  │
+ │   live trace, suites, reports    │◄── BLE GATT ──►│   pipe   : raw data terminal │
+ │ ctt (CLI): WiFi/BT/USB/I2C,      │    L2CAP LE    │   i2c, storage               │
+ │   HTML/JUnit, baseline compare   │    TCP / UDP   │ systemd: ctt-agent-bt / -ble │
+ └───────────────┬──────────────────┘    USB bulk    └──────────────┬───────────────┘
+                 │                                                  │
+                 └────────── SSH (optional): deploy, start the ─────┘
+                             server, board trace, pairing
 ```
 
-### Build tất cả bằng một lệnh
+- **With SSH to the board,** the apps deploy the agent, start the server and show the board's trace next to their own.
+- **Without SSH** (for example a board with only a serial console), the agent runs by hand or as a systemd service. The PC only needs Bluetooth.
+
+## Supported platforms
+
+| Link | Board (`ctt-agent`) | Windows PC | Linux PC |
+|---|:-:|:-:|:-:|
+| Bluetooth Classic RFCOMM | ✔ | ✔ | ✔ |
+| BLE GATT (write / notify) | ✔ (`server -t gatt`) | ✔ (bleak / WinRT) | ✔ (bleak / BlueZ) |
+| BLE L2CAP CoC | ✔ | ✗ (no application API) | ✔ |
+| L2CAP BR/EDR | ✔ | – | ✔ (`ctt` CLI) |
+| TCP / UDP (WiFi, Ethernet, USB-NCM) | ✔ | – | ✔ (`ctt` CLI) |
+| USB bulk (FunctionFS gadget / host) | ✔ | – | ✔ (`ctt` CLI) |
+| I2C (e.g. an authentication coprocessor) | ✔ | – | ✔ (`ctt` CLI) |
+
+**Board requirements:**
+- Linux with systemd and BlueZ (bluetoothd);
+- configfs USB gadget, nl80211 WiFi;
+- the kernel options listed in [docs/yocto-recipe.md](docs/yocto-recipe.md#5-kiểm-tra-kernel).
+
+**PC requirements:** Windows 10/11 or Linux, with a Bluetooth adapter managed by the operating system.
+
+## Installation
+
+### Prebuilt binaries (recommended)
+
+Download from [Releases](https://github.com/PhanNgocTrieu/conn-tools/releases): `vX.Y.Z` for official releases, or `latest-main` for the latest commit on `main`.
+
+| File | For |
+|---|---|
+| `ctt-agent-aarch64` | Linux aarch64 board: copy to `/tmp/ctt-agent` and `chmod +x` |
+| `ctt-agent-x86_64` | Linux x86_64 PC or board |
+| `ctt-agent.exe` | Windows desktop app |
+| `ctt-agent-console.exe` | Windows console app (also over SSH) |
+| `SHA256SUMS` | Verify the download: `sha256sum -c SHA256SUMS` |
+
+### Agent in the board image
+
+A Yocto recipe and systemd services (disabled by default) are provided, see [docs/yocto-recipe.md](docs/yocto-recipe.md). If your build machine cannot reach this repository, `scripts/export-recipe.sh` exports a recipe that carries its own source.
+
+### From source
 
 ```bash
-scripts/build-all.sh               # agent WSL (+ test), agent board, ctt-agent-console.exe, ctt-agent.exe
-scripts/build-all.sh --no-test     # bỏ qua test của agent WSL cho nhanh
-scripts/build-all.sh --no-windows  # không build .exe
+scripts/setup-wsl.sh --install   # Ubuntu / WSL packages (first time)
+scripts/build-all.sh             # host agent + tests, aarch64 board agent, both .exe, with a build report
 ```
 
-Build xong, script in ra **báo cáo**, đồng thời lưu vào `dist/BUILD-REPORT.txt`. Báo cáo gồm:
-- trạng thái OK / FAIL của từng bước, kèm log ở `build/logs/<bước>.log`;
-- đường dẫn từng file kết quả (cả đường dẫn Windows), dung lượng, thời gian;
-- lệnh để chạy từng file.
+See [Development](#development) for details.
 
-Mỗi file được gắn nhãn:
-- `[new]`: vừa build xong;
-- `[up to date]`: build lại nhưng không có gì thay đổi;
-- `[OLD FILE …]`: bước build file đó vừa lỗi, file đang thấy là bản cũ.
+## Quick start
 
-Một bước lỗi không làm dừng các bước khác. Exit code là 0 chỉ khi mọi bước OK.
+### 1. Desktop app on Windows (board reachable over SSH)
 
-| File | Nằm ở |
-|---|---|
-| agent cho WSL/Linux | `build/host/agent/ctt-agent` |
-| agent cho board | `build/dut/agent/ctt-agent` |
-| app console | `dist/ctt-agent-console.exe` |
-| app cửa sổ | `dist/ctt-agent.exe` |
+1. Open `ctt-agent.exe`. On **1. Connect**: enter the board's SSH target → **Check board** → **Deploy agent** if needed → **Scan** → **Pair**.
+2. **2. Throughput**: choose a direction → **▶ Start**. Leave *Min Mbit/s* empty to only measure.
+3. **3. Terminal**: exchange raw data in both directions.
 
-### Build file `.exe` trên máy (không cần push)
+### 2. Console app, board with a serial console only
 
-Script tự cài những gì còn thiếu trên Windows:
-- **Python 3.12**: cài bằng `winget`, chỉ cho user hiện tại, không cần quyền admin. Lệnh `python` có sẵn trong WindowsApps chỉ là lối tắt tới Store nên không tính. Không muốn tự cài: thêm `--no-python-install` (WSL) hoặc `-NoPythonInstall` (PowerShell).
-- **PyInstaller và `winrt`**: cài vào venv riêng `.venv-win`.
-
-Kết quả nằm ở `dist/`.
-
-| Muốn build | Từ WSL | Từ PowerShell (ở thư mục repo) |
-|---|---|---|
-| Chỉ `ctt-agent-console.exe` | `scripts/build-windows.sh console` | `.\scripts\build-console.ps1` |
-| Chỉ `ctt-agent.exe` | `scripts/build-windows.sh gui` | `.\scripts\build-btapp.ps1 -Only gui` |
-| Cả hai | `scripts/build-windows.sh` | `.\scripts\build-btapp.ps1` |
-
-- Muốn app deploy được agent lên board thì phải nhúng agent aarch64 vào: build agent trước bằng `scripts/build-dut.sh --generic --static --strip`.
-  - Bản WSL tự lấy `build/dut/agent/ctt-agent`.
-  - Bản PowerShell: thêm `-Agent <đường dẫn>`.
-- Bản WSL copy mã nguồn sang `%LOCALAPPDATA%\ctt-build` rồi build ở đó, vì PyInstaller chạy không ổn định trên đường dẫn `\\wsl.localhost`.
-- GitHub Actions cũng build cả 3 file ([.github/workflows/btapp.yml](.github/workflows/btapp.yml)):
-  - mỗi lần chạy có artifact `ctt-agent-windows`, `ctt-agent-console-windows`, `ctt-agent-aarch64` và `ctt-agent-x86_64`;
-  - push lên `main` cập nhật release `latest-main`;
-  - tag `vX.Y.Z` tạo release chính thức, xem [docs/release.md](docs/release.md).
-
-### Chạy app console `ctt-agent-console`
-
-| Chạy từ | Lệnh |
-|---|---|
-| PowerShell / cmd (ở thư mục repo) | `.\dist\ctt-agent-console.exe` |
-| WSL, gọi bản `.exe` của Windows (dùng dongle do Windows quản lý) | `dist/ctt-agent-console.exe` |
-| Vào Client PC qua SSH (setup *Client Test*) | `ssh <user>@<client-pc>` rồi `ctt-agent-console.exe` |
-| WSL / Linux, không cần `.exe` (dùng BlueZ, dongle phải gắn vào WSL) | `python3 -m ctt.btapp console` |
-
-Chạy không có tham số sẽ mở **menu số** (1–10, 0 để thoát; giao diện tiếng Anh). Lệnh con dùng trong script:
-
+```sh
+# on the board
+/tmp/ctt-agent server -t rfcomm -e /22 -i 1        # or: systemctl start ctt-agent-bt
+```
 ```bat
-ctt-agent-console.exe --version
-ctt-agent-console.exe scan                                                  :: tìm thiết bị BT
-ctt-agent-console.exe paired                                                :: thiết bị đã pair
-ctt-agent-console.exe pair <ADDR> --board root@<board-ip>                   :: pair, board tự chấp nhận qua SSH
-ctt-agent-console.exe run --board root@<board-ip> -m bidir -d 20            :: đo throughput (có SSH)
-ctt-agent-console.exe run --addr <ADDR> --channel 22 -m tx -d 30 --json     :: đo khi không SSH (Client Test)
-ctt-agent-console.exe run --board root@<board-ip> -m tx --min-up 1.0        :: FAIL nếu dưới 1.0 Mbit/s
-ctt-agent-console.exe suite --board root@<board-ip> -l baseline             :: bộ BT-TP-01..06 có ngưỡng Mbit/s
-ctt-agent-console.exe suite --addr <ADDR> --channel 22 -l target            :: như trên, board khách (không SSH)
-ctt-agent-console.exe term --board root@<board-ip>                          :: terminal gửi/nhận dữ liệu
-ctt-agent-console.exe unpair <ADDR>
+:: on the PC (also over SSH)
+ctt-agent-console.exe caps                                      :: links this PC supports
+ctt-agent-console.exe suite --addr <BOARD_BT_ADDR> --channel 22 :: BT-TP-01..06, level measure
+ctt-agent-console.exe suite --addr <BOARD_BT_ADDR> --link ble-gatt
+ctt-agent-console.exe run   --addr <BOARD_BT_ADDR> --channel 22 -m bidir -d 30 --json > result.json
 ```
 
-`run` và `suite` trả exit code 0 khi PASS và 1 khi FAIL. `suite` lưu báo cáo JSON + CSV vào `ctt-results/`. Trong WSL, thay `ctt-agent-console.exe` bằng `python3 -m ctt.btapp`.
+Run it without arguments to get the numbered menu. All commands: [docs/bt-app.md](docs/bt-app.md).
 
-App cửa sổ: `.\dist\ctt-agent.exe` (Windows) hoặc `python3 -m ctt.btapp` (WSL, cần `python3-tk`).
-
-Chi tiết từng mục menu: [docs/bt-app.md](docs/bt-app.md#console).
-
-## CLI `ctt` (WiFi / BT / USB / MFi)
+### 3. `ctt` CLI (Linux / WSL): WiFi, Bluetooth, USB, I2C
 
 ```bash
 export CTT_DUT=root@<board-ip>
-python3 -m ctt deploy                         # copy agent lên board
-python3 -m ctt dut-info                       # kiểm kê phần cứng + trạng thái board
-python3 -m ctt run -t tcp -m bidir -d 30s     # một test
+python3 -m ctt deploy                                   # copy the agent to the board
+python3 -m ctt board status                             # board state (according to the board profile)
+python3 -m ctt run -t tcp -m bidir -d 30s               # a single test
 python3 -m ctt profile profiles/wifi_tcp_throughput.yaml
-python3 -m ctt board status                   # service trong board profile, BlueZ, USB role, WiFi
+python3 -m ctt selftest                                 # self-check over TCP loopback, no board needed
 ```
 
-| `-t` | Giao tiếp | `-m` | Hướng (server chạy trên board) |
-|---|---|---|---|
-| `tcp`, `udp` | WiFi, Ethernet, USB-NCM | `tx` | PC → board |
-| `rfcomm`, `l2cap` | Bluetooth | `rx` | board → PC |
-| `usb` | USB bulk (gadget) | `bidir` | cả hai chiều |
-| `unix` | test không cần phần cứng | `echo` | RTT |
+## Results and reports
 
-Mọi test đều kiểm tra số thứ tự gói và CRC. Exit code 0 khi mọi test PASS, nên dùng thẳng được trong CI. Report nằm ở `out/<thời điểm>_<tên>/` (`report.html`, `junit.xml`, CSV/JSON). Chi tiết: [docs/TESTING.md](docs/TESTING.md).
+- **Live trace on both ends.** Board side, while the PC sends:
+  ```
+  [up   rx]   2.00-  3.00 s      0.396 Mbps  +50 fr   49.5 KB | received 152 fr  150.5 KB  lost=0 crc_err=0
+  ```
+  PC side:
+  ```
+       3.0s  PC->board  0.395 Mbit/s  sent 150.5 KB (152 fr)
+  data: PC sent 150.5 KB, board received 150.5 KB
+  ```
+- **Suite levels:**
+  - `measure`: each case is `OK`, `DATA ERR` or `ERROR`. The summary table shows average Mbit/s, the per-second min–max range, and RTT avg / p99.
+  - `baseline` / `target`: `PASS` / `FAIL` against limits.
+- **Output files:**
+  - apps: `ctt-results/suite-<level>-<time>.json` and `.csv`;
+  - CLI: `out/<time>_<name>/` with `report.html`, `junit.xml` and CSV/JSON. `ctt compare` checks a run against a baseline run.
+- **Exit codes:**
+  - `0`: success;
+  - `1`: failed checks;
+  - `2`: usage or connection error.
+  - With level `measure`, `suite` returns `0` when every case ran.
 
-## Cấu trúc mã nguồn
+## Board profile
 
+CTT works out of the box on a board with the standard Linux stack. Whatever a product does differently goes into a YAML file, so the code stays generic. Typical content:
+- its own Bluetooth / USB / WiFi daemons;
+- how the board accepts a pairing;
+- a bond limit;
+- a dual-role USB port owned by a daemon;
+- extra operational commands.
+
+```yaml
+name: my-board
+services: [bluetooth, my-bt-daemon]
+bluetooth:
+  max_bonds: 5
+  pairing: {setup: [my-bt-cli pairable on], confirm: my-bt-cli confirm-loop}
+usb:
+  gadget_stop_services: [my-usb-daemon]
+commands:
+  wifi-ap: my-wifi-cli mode ap
 ```
-agent/                  ctt-agent (C++17): CTP, transports, server/client, pipe, i2c, storage
-ctt/                    Python
-  core/                 executor (local/SSH), chạy agent, đơn vị
-  protocol/ctp.py       client CTP thuần Python (dùng cho app Windows)
-  bluetooth/            bluetoothctl, pairing (WinRT/BlueZ), điều khiển board qua SSH
-  platform/             board profile: phần riêng của từng board (configs/board.example.yaml)
-  interfaces/           wifi, usb, mfi
-  testing/              runner, profile YAML
-  reporting/            ghi kết quả, in console, HTML/JUnit, so sánh baseline
-  cli/                  CLI `ctt` (mỗi lệnh là một class trong cli/commands/)
-  btapp/                app Bluetooth
-    service.py          nghiệp vụ dùng chung cho GUI và console
-    settings.py         cấu hình (lưu %APPDATA%\ctt-bt\config.json)
-    gui/                cửa sổ Tkinter (mỗi tab một class)
-    console/            menu console + lệnh con
-packaging/              entry point PyInstaller cho 2 file .exe
-profiles/  configs/     profile YAML, cấu hình MFi mẫu
-scripts/                setup, build host/board/app, gadget USB, usbipd
-yocto/meta-ctt/         recipe ctt-agent (+ service RFCOMM channel 22)
-docs/                   tài liệu
-tests/                  unit/integration test (python3 -m unittest discover -s tests)
-```
 
-## Trạng thái
+- **Lookup order:**
+  1. `--board-profile FILE` or `CTT_BOARD_PROFILE`;
+  2. `./board.yaml`;
+  3. `configs/board.yaml`;
+  4. `configs/board.private.yaml`;
+  5. `%APPDATA%\ctt-bt\board.yaml`.
+- **Full template:** [configs/board.example.yaml](configs/board.example.yaml).
+- **Note:** `*.private.yaml` files are never committed. Keep project-specific information there.
 
-| Phần | Trạng thái |
+## Documentation
+
+| Topic | Document |
 |---|---|
-| TCP / UDP (WiFi, Ethernet, USB-NCM) | ✅ |
-| Bluetooth RFCOMM / L2CAP, pairing (`ctt bt`, `ctt-agent`, `ctt-agent-console`) | ✅ đã test trên board với setup Local Test; Client Test chưa chạy |
-| MFi Auth CP (I2C) | ✅ đã test với bus giả lập; chờ register map |
-| USB bulk gadget / storage | ✅ storage đã test; gadget chờ board |
-| Yocto layer `meta-ctt` | ✅ build aarch64; recipe chờ chạy trong BSP |
+| Bluetooth apps (desktop, console, sub-commands) | [docs/bt-app.md](docs/bt-app.md) |
+| BLE: design, GATT service, usage | [docs/bt-ble.md](docs/bt-ble.md) |
+| Bluetooth test plan | [docs/bt-test-plan.md](docs/bt-test-plan.md) |
+| Bluetooth test cases (serial console + console / desktop app) | [docs/bt-test-cases.md](docs/bt-test-cases.md) |
+| Step by step on a board with a serial console only | [docs/bt-client-test.md](docs/bt-client-test.md) |
+| WiFi, USB, I2C with the `ctt` CLI | [docs/TESTING.md](docs/TESTING.md), [docs/usb.md](docs/usb.md), [docs/bluetooth.md](docs/bluetooth.md) |
+| CTP protocol | [docs/ctp-spec.md](docs/ctp-spec.md) |
+| Yocto: recipe, services, kernel | [docs/yocto-recipe.md](docs/yocto-recipe.md) |
+| Releasing | [docs/release.md](docs/release.md) |
+| WSL environment | [docs/wsl-setup.md](docs/wsl-setup.md) |
+
+## Development
+
+### Build
+
+| Command | Result |
+|---|---|
+| `scripts/build-all.sh` | Everything, with a report of the output paths in `dist/BUILD-REPORT.txt` (`--no-test`, `--no-windows`) |
+| `scripts/build-host.sh` | Agent for the Linux/WSL host, then all tests (C++ and Python) |
+| `scripts/build-dut.sh --generic --static --strip` | aarch64 board agent (`--sdk <env>` to use a Yocto SDK) |
+| `scripts/build-windows.sh [all\|gui\|console]` | Both `.exe` from WSL; installs Python 3.12 per user (winget) on first use |
+| `.\scripts\build-btapp.ps1` | Same, from PowerShell |
+
+### Tests
+
+```bash
+scripts/build-host.sh                        # CTest: C++ unit tests, loopback, all Python tests
+python3 -m unittest discover -s tests        # Python only
+```
+
+The tests run without hardware:
+- Bluetooth: a fake `bluetoothctl`;
+- BLE GATT: the real `ctt-agent` against a fake BlueZ on a private dbus-daemon;
+- other links: TCP and AF_UNIX.
+
+Set `CTT_BOARD_PROFILE=none` to keep local board profiles out of the tests.
+
+### CI and releases
+
+[GitHub Actions](.github/workflows/btapp.yml) builds the host and board agents and both `.exe` files, runs the tests on Linux and Windows, and smoke-tests the executables.
+- **A push to `main`** refreshes the `latest-main` pre-release.
+- **A `vX.Y.Z` tag** publishes a release. CI checks that the tag matches the version in the sources (`scripts/version.sh check`).
+
+Full procedure: [docs/release.md](docs/release.md).
+
+```bash
+scripts/version.sh set X.Y.Z && git commit -am "Release X.Y.Z" && git tag -a vX.Y.Z -m "CTT X.Y.Z"
+git push origin main vX.Y.Z
+```
+
+### Source layout
+
+```
+agent/            ctt-agent (C++17): CTP, transports (tcp, udp, rfcomm, l2cap, gatt, usb, unix),
+                  server / client / pipe, minimal D-Bus client, i2c, storage
+ctt/
+  protocol/       pure-Python CTP client, BLE links (bleak, socket bridge), per-platform capabilities
+  btapp/          Bluetooth apps: shared service, gui/ (Tkinter), console/ (menu + sub-commands)
+  bluetooth/      bluetoothctl, pairing (WinRT / BlueZ), board control over SSH
+  platform/       board profile
+  interfaces/     wifi, usb, mfi
+  testing/        runner, YAML profiles
+  reporting/      console, HTML / JUnit, baseline comparison
+  cli/            `ctt` CLI (one class per command in cli/commands/)
+configs/          example board profile, example I2C configuration
+profiles/         YAML test profiles
+scripts/          build, version, recipe export, USB gadget, environment setup
+yocto/            meta-ctt layer (git) and a recipe with local source (recipe-local-src)
+tests/            Python tests, fake bluetoothctl / BlueZ / agent
+docs/             guides (Vietnamese)
+```
+
+## Status and known limitations
+
+| Area | Status |
+|---|---|
+| TCP / UDP | Stable |
+| Bluetooth RFCOMM, pairing, Windows apps | Run on hardware: Windows PC with a board over SSH, and with a board that has a serial console only |
+| BLE GATT / L2CAP CoC | Verified against a fake BlueZ on a real D-Bus; **not yet run on a real radio** |
+| USB bulk gadget / storage | Storage tested; gadget not yet run on hardware |
+| I2C | Tested on a simulated bus; needs the device's real register map |
+| Yocto | aarch64 agent built in CI; recipe not yet built inside a specific BSP |
+
+- **Windows does not offer L2CAP LE CoC to applications.** The `ble-coc` link runs from Linux PCs only.
+- **WSL does not share the Bluetooth adapter with Windows.** The `.exe` apps use the adapter managed by Windows. The `ctt` CLI inside WSL needs the dongle attached to WSL with usbipd.
