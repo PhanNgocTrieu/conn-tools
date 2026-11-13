@@ -58,10 +58,10 @@ class ThroughputTab(ttk.Frame):
         of = ttk.LabelFrame(left, text="Parameters", padding=8)
         of.pack(fill="x", pady=8)
         for r, (lbl, var, hint) in enumerate((("Duration (s)", self.v_dur, ""),
-                                              ("Block (byte)", self.v_block, "990 ≈ 1 RFCOMM frame"),
+                                              ("Block (byte)", self.v_block, "RFCOMM: 990 ≈ 1 frame · BLE: 244 ≈ 1 packet"),
                                               ("Rate limit Mbit/s", self.v_rate, "empty = unlimited"),
                                               ("Min Mbit/s (PASS)", self.v_min,
-                                               "each measured direction; empty = no minimum"))):
+                                               "empty = only measure (result OK / DATA ERR)"))):
             ttk.Label(of, text=lbl).grid(row=2 * r, column=0, sticky="w")
             ttk.Entry(of, textvariable=var, width=10).grid(row=2 * r, column=1, sticky="w", padx=4)
             if hint:
@@ -125,6 +125,12 @@ class ThroughputTab(ttk.Frame):
             messagebox.showerror("Parameters", "Duration, block, rate limit and min Mbit/s must be numbers.")
             return None
 
+    def _verdict(self, ok: bool) -> str:
+        """Min Mbit/s empty = only measuring: OK / DATA ERR (lost, CRC). With a minimum: PASS / FAIL."""
+        if self.v_min.get().strip():
+            return "PASS" if ok else "FAIL"
+        return "OK" if ok else "DATA ERR"
+
     def _expect(self, r: Result) -> dict:
         try:
             limit = float(self.v_min.get()) if self.v_min.get().strip() else None
@@ -151,8 +157,8 @@ class ThroughputTab(ttk.Frame):
 
         def connected(t):
             if self.ctx.settings.uses_ssh:
-                ui(self.ctx.log, f"Board: server RFCOMM {t.address} channel {t.channel}", "board")
-            ui(self.ctx.log, f"RFCOMM connect {t.address} channel {t.channel}…")
+                ui(self.ctx.log, f"Board: server {t.describe()}", "board")
+            ui(self.ctx.log, f"Connect {t.describe()}…")
 
         self.ctx.dispatcher.background(
             lambda: self.ctx.service.run_throughput(
@@ -212,7 +218,7 @@ class ThroughputTab(ttk.Frame):
         ok = all_ok(checks)
         row = {"time": time.strftime("%H:%M:%S"), "mode": MODE_LABELS[r.mode], "up": mbps(r.up_mbps),
                "down": mbps(r.down_mbps), "rtt": "–" if rtt is None else f"{rtt:.2f}",
-               "err": f"{r.lost}/{r.crc_errors}", "result": "PASS" if ok else "FAIL"}
+               "err": f"{r.lost}/{r.crc_errors}", "result": self._verdict(ok)}
         self.history.append({**row, "detail": r.to_dict(), "board_addr": self.ctx.settings.bt_addr})
         self.hist.insert("", 0, values=list(row.values()), tags=() if ok else ("bad",))
         msg = f"Result {MODE_LABELS[r.mode]}: up {mbps(r.up_mbps)} · down {mbps(r.down_mbps)} Mbit/s"

@@ -2,14 +2,14 @@
 
 Cách test phụ thuộc vào vai trò của cổng USB trên board. Xem bằng `ctt dut-info` (mục `usb`: "UDC" và `usb_role`) hoặc `ctt usb gadget status --dut ...`:
 
-| `/sys/class/udc` trên DUT | board có thể là | Test |
+| `/sys/class/udc` trên DUT | Board có thể là | Test |
 |---|---|---|
 | có ít nhất một UDC | **device** (gadget) | Bulk throughput DUT ↔ PC (mục 1) và NCM/TCP (mục 2) |
 | trống | chỉ **host** | Throughput USB storage (mục 3), danh sách và tốc độ thiết bị |
 
-Cổng OTG có thể đổi vai trò qua `/sys/class/usb_role/*/role` (`host` / `device`), tuỳ BSP của Vendor.
+Cổng OTG có thể đổi vai trò qua `/sys/class/usb_role/*/role` (`host` / `device`), tuỳ BSP.
 
-**Image vendor:** cổng dual-role là `12340000.usb_dwc2`, đổi role bằng `/sys/bus/platform/devices/12340000.usb_dwc2/dwc2_drdmode` (đường dẫn lấy từ `role_path` trong `/etc/usb-daemon.conf`). `usb-daemon` giữ cổng ở chế độ host, và UDC **chỉ xuất hiện khi role là `device`**, nên `/sys/class/udc` trống là bình thường. `ctt usb gadget up` tự làm các bước: dừng `usb-daemon`, ghi `device`, chờ UDC, dựng gadget CTT. `ctt usb gadget down` gỡ gadget, ghi lại `host` và start lại `usb-daemon`. Những gì đã thay đổi được lưu ở `/run/ctt-usb-gadget`. Dùng `--keep-fw` nếu muốn lệnh báo lỗi thay vì dừng `usb-daemon`.
+**Cổng dual-role có daemon của sản phẩm giữ:** khai báo trong board profile `usb.gadget_stop_services` (daemon cần dừng khi chạy gadget) và `usb.role_file` (file sysfs đổi role, ví dụ `…/dwc2_drdmode` của controller dwc2). `ctt usb gadget up` dừng daemon, chuyển cổng sang device; `down` trả lại như cũ. `usb-daemon` giữ cổng ở chế độ host, và UDC **chỉ xuất hiện khi role là `device`**, nên `/sys/class/udc` trống là bình thường. `ctt usb gadget up` tự làm các bước: dừng `usb-daemon`, ghi `device`, chờ UDC, dựng gadget CTT. `ctt usb gadget down` gỡ gadget, ghi lại `host` và start lại `usb-daemon`. Những gì đã thay đổi được lưu ở `/run/ctt-usb-gadget`. Dùng `--keep-fw` nếu muốn lệnh báo lỗi thay vì dừng `usb-daemon`.
 
 ## 1. Bulk throughput: board làm gadget
 
@@ -64,4 +64,4 @@ ctt usb storage --dut root@<ip> --path /run/media/sda1/ctt.bin --size 512M \
 |---|---|
 | Descriptor FunctionFS (layout byte), parse config descriptor, tìm thiết bị qua sysfs | Unit test |
 | `ctt-agent storage` (O_DIRECT, verify, phát hiện dữ liệu hỏng) | Test trên file thật |
-| I/O FunctionFS / usbdevfs, `dut-usb-gadget.sh` trên board | **Chưa chạy trên phần cứng.** Kernel WSL không có gadget/dummy_hcd. Cần chạy lần đầu với board |
+| I/O FunctionFS / usbdevfs, `dut-usb-gadget.sh` trên board | **Chưa chạy trên phần cứng.** Kernel WSL không có gadget/dummy_hcd. Cần chạy lần đầu trên board thật |

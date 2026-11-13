@@ -90,7 +90,7 @@ if ($SkipInstall) {
 }
 
 $common = @("--noconfirm", "--onefile", "--paths", ".", "--collect-all", "winrt",
-            "--collect-submodules", "ctt")
+            "--collect-submodules", "ctt", "--collect-all", "bleak")
 if ($Agent -ne "") {
     New-Item -ItemType Directory -Force -Path dist\agent | Out-Null
     $src = (Resolve-Path $Agent).Path

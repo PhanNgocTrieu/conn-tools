@@ -125,34 +125,39 @@ class BtPrepareCommand(BtSubcommand):
 
 
 class DutPairingAcceptor:
-    """DUT side of `--dut-accept`: bt-daemon (D-Bus) or a bluetoothctl agent."""
+    """DUT side of `--dut-accept`: the board profile's pairing commands or a bluetoothctl agent."""
 
     def __init__(self, args):
-        from ctt.firmware import vendor_daemons as fw
+        from ctt.cli.options import board_profile
+        from ctt.platform import board
         self.args = args
-        self.fw = fw
         self.dut_ex = dut_executor(args)
+        self.profile = board_profile(args)
         self.mode = args.dut_accept
-        self.bm = None
+        self.acc = None
         self.ctl = None
         if self.mode == "auto":
-            st = fw.status(self.dut_ex) if not isinstance(self.dut_ex, LocalExecutor) else {}
-            self.mode = "bm" if fw.active(st, "bt-daemon") else "bluetoothctl"
-            for w in fw.warnings_for(st, set(), bt_pairing=True):
-                if "default BlueZ agent" not in w:
+            self.mode = "profile" if self.profile.pairing.custom else "bluetoothctl"
+            if not isinstance(self.dut_ex, LocalExecutor):
+                for w in board.warnings_for(board.status(self.dut_ex, self.profile), set(), True, self.profile):
                     warn(w)
+        if self.mode == "profile" and not self.profile.pairing.custom:
+            raise SystemExit(f"--dut-accept profile: no bluetooth.pairing in the board profile "
+                             f"({self.profile.describe()})")
 
     def peer_from_manager(self) -> str | None:
-        """The DUT address as bt-daemon reports it (bm mode only)."""
-        if self.mode != "bm":
+        """The DUT address from the board profile's bluetooth.address command, if any."""
+        if not self.profile.address_cmd:
             return None
-        addr = self.fw.vendor_call(self.dut_ex, "GetLocalAddress").split('"')
-        return addr[3] if len(addr) >= 4 else None
+        r = self.dut_ex.run(["sh", "-c", self.profile.address_cmd], timeout=15)
+        addr = r.stdout.strip().splitlines()[0].upper() if r.returncode == 0 and r.stdout.strip() else ""
+        return addr or None
 
     def start(self) -> None:
-        if self.mode == "bm":
-            self.bm = self.fw.VendorAcceptor(self.dut_ex).__enter__()
-            print("DUT: bt-daemon pairable + discoverable, confirming pairing requests")
+        if self.mode == "profile":
+            from ctt.platform.board import ProfileAcceptor
+            self.acc = ProfileAcceptor(self.dut_ex, self.profile.pairing).__enter__()
+            print(f"DUT: pairing accepted with the board profile's commands ({self.profile.name})")
         else:
             from ctt.bluetooth.bluetoothctl import prepare_acceptor
             self.ctl = open_ctl(self.args, "dut")
@@ -162,9 +167,9 @@ class DutPairingAcceptor:
     def close(self) -> None:
         if self.ctl:
             self.ctl.close()
-        if self.bm:
-            self.bm.close()
-            print(f"DUT: bt-daemon confirmed {self.bm.confirmed} pairing request(s)")
+        if self.acc:
+            self.acc.close()
+            print(f"DUT: confirmed {self.acc.confirmed} pairing request(s)")
 
 
 class BtPairCommand(BtSubcommand):
@@ -182,10 +187,10 @@ class BtPairCommand(BtSubcommand):
         p.add_argument("--passkey", default=None, help="passkey to answer with")
         p.add_argument("--no-trust", action="store_true")
         p.add_argument("--dut-accept", nargs="?", const="auto", default=None,
-                       choices=("auto", "bm", "bluetoothctl"),
-                       help="make the DUT accept the pairing: bm = through bt-daemon's "
-                            "D-Bus API (vendor image), bluetoothctl = own BlueZ agent; "
-                            "auto (default) picks bm when bt-daemon runs")
+                       choices=("auto", "profile", "bluetoothctl"),
+                       help="make the DUT accept the pairing: profile = the board profile's "
+                            "bluetooth.pairing commands, bluetoothctl = own BlueZ agent; "
+                            "auto (default) picks profile when the board profile defines it")
         p.add_argument("--scan-timeout", type=float, default=20)
         p.add_argument("--timeout", type=float, default=40, help="pairing timeout")
 
@@ -205,7 +210,7 @@ class BtPairCommand(BtSubcommand):
             addr = acceptor.peer_from_manager()
             if addr:
                 args.addr = addr
-                print(f"DUT controller (bt-daemon): {args.addr}")
+                print(f"DUT controller (board profile): {args.addr}")
         peer = self._peer(args)
         try:
             if acceptor:

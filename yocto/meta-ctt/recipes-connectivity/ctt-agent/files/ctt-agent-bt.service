@@ -1,8 +1,9 @@
 [Unit]
 Description=CTT agent: Bluetooth RFCOMM throughput endpoint (channel 22)
 Documentation=https://github.com/PhanNgocTrieu/conn-tools
-# bt-daemon powers the adapter; start after it so channel 22 is bound on a live controller.
-After=bluetooth.service bt-daemon.service
+# If a daemon of your product powers the adapter, order after it with a drop-in
+# (<unit>.service.d/after.conf: [Unit] After=<that-daemon>.service).
+After=bluetooth.service
 Wants=bluetooth.service
 
 [Service]

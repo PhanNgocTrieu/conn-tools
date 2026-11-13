@@ -1,8 +1,9 @@
 #!/bin/sh
-# Copy the ctt-agent sources into an vendor-style Yocto recipe folder (source kept next to the recipe,
-# no git fetch), e.g. for meta-project/recipes-project/ctt-agent/. Nothing is built here.
+# Export ctt-agent as a Yocto recipe whose sources sit next to it in your layer (file://, no git
+# fetch, no network: for build machines that cannot reach this repository). Nothing is built here.
 #
-#   scripts/export-recipe.sh [RECIPE_DIR]      default: recipes-project/ctt-agent
+#   scripts/export-recipe.sh [RECIPE_DIR]      e.g. <your-layer>/recipes-connectivity/ctt-agent
+#                                              default: out/ctt-agent-recipe
 #
 # Result:  RECIPE_DIR/ctt-agent.bb             only if the folder has no .bb yet (yocto/recipe-local-src/)
 #          RECIPE_DIR/files/ctt-agent/   CMakeLists.txt, agent/{CMakeLists.txt,include,src},
@@ -10,7 +11,7 @@
 #          RECIPE_DIR/files/ctt-agent-bt.service
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-DEST=${1:-$ROOT/recipes-project/ctt-agent}
+DEST=${1:-$ROOT/out/ctt-agent-recipe}
 SRC=$DEST/files/ctt-agent
 
 rm -rf "$SRC"
@@ -19,7 +20,8 @@ cp "$ROOT/CMakeLists.txt" "$SRC/"
 cp "$ROOT/agent/CMakeLists.txt" "$SRC/agent/"
 cp -r "$ROOT/agent/include" "$ROOT/agent/src" "$SRC/agent/"
 cp "$ROOT/scripts/dut-usb-gadget.sh" "$SRC/scripts/"
-cp "$ROOT/yocto/meta-ctt/recipes-connectivity/ctt-agent/files/ctt-agent-bt.service" "$DEST/files/"
+cp "$ROOT/yocto/meta-ctt/recipes-connectivity/ctt-agent/files/ctt-agent-bt.service" \
+   "$ROOT/yocto/meta-ctt/recipes-connectivity/ctt-agent/files/ctt-agent-ble.service" "$DEST/files/"
 
 # which commit the copy came from (+ "-dirty" when the working tree had local changes)
 rev=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)

@@ -18,6 +18,7 @@ add_library(ctt_core STATIC
   src/i2c_cmd.cpp
   src/storage_cmd.cpp
   src/pipe_cmd.cpp
+  src/dbus.cpp
   src/transports/fd_stream.cpp
   src/transports/tcp.cpp
   src/transports/net_common.cpp
@@ -28,6 +29,7 @@ add_library(ctt_core STATIC
   src/transports/packet_stream.cpp
   src/transports/rfcomm.cpp
   src/transports/l2cap.cpp
+  src/transports/gatt.cpp
   src/transports/unix.cpp
   src/transports/registry.cpp
 )

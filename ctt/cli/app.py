@@ -9,7 +9,7 @@ from ctt import __version__
 from ctt.cli.base import Command
 from ctt.cli.commands.bluetooth import BluetoothCommand
 from ctt.cli.commands.dut import DeployCommand, DutInfoCommand
-from ctt.cli.commands.firmware import FirmwareCommand
+from ctt.cli.commands.board import BoardCommand
 from ctt.cli.commands.mfi import MfiCommand
 from ctt.cli.commands.reports import CompareCommand, ReportCommand
 from ctt.cli.commands.testing import ProfileCommand, RunCommand, SelftestCommand
@@ -18,7 +18,7 @@ from ctt.cli.commands.usb import UsbCommand
 COMMANDS: list[type[Command]] = [
     RunCommand, ProfileCommand, SelftestCommand,
     DeployCommand, DutInfoCommand,
-    BluetoothCommand, UsbCommand, FirmwareCommand,
+    BluetoothCommand, UsbCommand, BoardCommand,
     ReportCommand, CompareCommand, MfiCommand,
 ]
 

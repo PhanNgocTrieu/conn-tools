@@ -42,8 +42,8 @@ Quy ước:
 
 | | |
 |---|---|
-| Board (UART) | `dmesg -n 1; hciconfig -a; systemctl is-active bt-daemon; bt-daemon-cli.sh get-paired-devices` |
-| Mong đợi | `hci0` ở trạng thái `UP RUNNING`. Ghi lại `BD Address` (= `<ADDR>`). bt-daemon `active`. Số bond < 5 (đủ 5 thì `bt-daemon-cli.sh remove <addr>`) |
+| Board (UART) | `dmesg -n 1; hciconfig -a; systemctl is-active bluetooth; bluetoothctl devices Paired` |
+| Mong đợi | `hci0` ở trạng thái `UP RUNNING`. Ghi lại `BD Address` (= `<ADDR>`). bluetooth `active`. Còn chỗ cho bond mới (nếu board giới hạn số bond: `bluetoothctl remove <addr>` bớt) |
 
 ### TC-01: Bluetooth trên PC và cấu hình "No SSH"
 
@@ -61,7 +61,7 @@ Quy ước:
 
 | | |
 |---|---|
-| Board (UART) | `bt-daemon-cli.sh set-pairable true; bt-daemon-cli.sh set-discoverable true` |
+| Board (UART) | `bluetoothctl`, rồi `power on`, `agent NoInputNoOutput`, `default-agent`, `pairable on`, `discoverable on` (giữ phiên này mở). Board có daemon BT riêng: dùng công cụ của daemon đó |
 | A (console) | (4) Scan Bluetooth → chờ ~10 s → `Use one of them as the board?` = `y` → số thứ tự của board. Hoặc lệnh: `ctt-agent-console.exe scan` |
 | B (GUI) | **Scan** → chờ 10–15 s → chọn board trong danh sách |
 | Mong đợi | Board có trong danh sách với đúng `<ADDR>`. Chọn board thì địa chỉ được điền vào Settings / ô **Board BT address** |
@@ -73,7 +73,7 @@ Quy ước:
 | Trước | Board chưa pair với PC (đã pair thì làm TC-18 trước) |
 | A (console) | (6) Pair with the board → Enter (giữ địa chỉ). Không có SSH thì console không hỏi `Board accepts the pairing…` |
 | B (GUI) | Chọn board → **Pair**. Bỏ tick **Board accepts the pairing (over SSH)** (không có SSH) |
-| Board (UART) | Ngay khi PC đang pair: `bt-daemon-cli.sh confirm-pairing` |
+| Board (UART) | Khi `bluetoothctl` hỏi `Confirm passkey … (yes/no)`: gõ `yes` |
 | Mong đợi | Console: `OK  Pairing successful`. GUI: Log `Pair <ADDR>: Pairing successful`. Có mã 6 số (`Passkey: …`) thì mã phải **trùng** với mã board in ra. (5) Paired devices / **Paired devices** có `<ADDR>` |
 
 ### TC-18: Bỏ pair rồi pair lại (5 lần)
@@ -162,12 +162,20 @@ Mỗi lần đo, board in đầu tiên `session from …`, rồi `mode=… block
 
 GUI: tab **2. Throughput** có biểu đồ, nhãn kết quả (`sent … · received … · lost 0 · CRC errors 0`) và một dòng Log mỗi giây.
 
-### Ngưỡng PASS
+### Level: chỉ đo, hoặc có ngưỡng PASS
 
-Mọi lần đo **luôn** phải có `lost 0`, `CRC errors 0` và đúng thứ tự. Ngoài ra phải đạt ngưỡng của level đang chạy:
+Mặc định là level **`measure`**: chỉ ghi số đo, không chấm PASS/FAIL theo Mbit/s. Toàn vẹn dữ liệu vẫn được kiểm tra và báo trong cột `result`:
+- `OK`: không mất gói, không lỗi CRC, đúng thứ tự;
+- `DATA ERR`: có mất gói / lỗi CRC / sai thứ tự;
+- `ERROR`: case không chạy được (ví dụ không kết nối được).
+
+Bảng tổng kết ghi Mbit/s trung bình, khoảng min–max của các dòng trace (bỏ giây đầu), RTT avg/p99, lost và crc. Dòng cuối là `6/6 measured, data OK in 6`. Lệnh `suite` ở level `measure` trả exit code 0 nếu mọi case đều chạy được. Ở GUI: để trống ô **Min Mbit/s (PASS)** thì cột kết quả hiện `OK` / `DATA ERR`.
+
+Khi cần chấm đạt / không đạt, chọn `baseline` hoặc `target`. Ở hai level này, mọi lần đo phải có `lost 0`, `CRC errors 0`, đúng thứ tự, và phải đạt ngưỡng:
 
 | Level | Ý nghĩa | Dùng khi |
 |---|---|---|
+| `measure` (mặc định) | Chỉ đo, không có ngưỡng Mbit/s / RTT | Đo đạc, so sánh, tìm nút cổ chai |
 | `baseline` | Mức sàn để bắt regression của setup Local Test (PC Windows + USB dongle). Bằng khoảng 75% số thấp nhất đã đo trong `report.md` (PC → board 0.32–0.44, board → PC 0.51–0.61 Mbit/s) | Mỗi build tool / firmware mới |
 | `target` | **Mục tiêu sản phẩm** trên board khách (chip trên board) | Chấp nhận sản phẩm |
 
@@ -227,9 +235,9 @@ Trần lý thuyết của RFCOMM (goodput): 3-DH5 khoảng 2.1, 2-DH5 khoảng 1
 
 | | |
 |---|---|
-| A (console) | `ctt-agent-console.exe suite --addr <ADDR> --channel 22 -l target` (khoảng 3 phút). Hoặc (10) Test suite with Mbit/s expectations → level → Enter |
+| A (console) | `ctt-agent-console.exe suite --addr <ADDR> --channel 22` (level `measure`, khoảng 3 phút). Thêm `-l target` để chấm theo ngưỡng. Hoặc menu (10) → level → Enter |
 | Theo dõi | Trước mỗi case in `[i/6] BT-TP-0x …`, rồi một dòng trace mỗi giây. Board in một `session from …` cho mỗi case. `-q` tắt trace |
-| Mong đợi | Bảng tổng kết kết thúc bằng `6/6 PASS`, exit code 0. Báo cáo ở `ctt-results/suite-target-<thời điểm>.json` và `.csv`. Case FAIL ghi rõ ngưỡng không đạt, ví dụ `PC->board 0.420 >= 1 Mbit/s` |
+| Mong đợi | `measure`: bảng tổng kết kết thúc bằng `6/6 measured, data OK in 6`. Với `-l target`: `6/6 PASS`, và case FAIL ghi rõ ngưỡng không đạt, ví dụ `PC->board 0.420 >= 1 Mbit/s`. Báo cáo ở `ctt-results/suite-<level>-<thời điểm>.json` và `.csv` (có thêm cột min/max và số byte) |
 
 GUI không có nút chạy cả bộ. Ở tổ hợp B, chạy TC-10 → TC-14 lần lượt.
 
@@ -270,6 +278,66 @@ GUI không có nút chạy cả bộ. Ở tổ hợp B, chạy TC-10 → TC-14 l
 
 ---
 
+## 5. BLE (Bluetooth Low Energy)
+
+Thiết kế và các link: [bt-ble.md](bt-ble.md). Nền tảng nào chạy link nấy:
+
+| Link | Tổ hợp A (console, PC Windows) | Tổ hợp B (GUI, PC Windows) | PC Linux |
+|---|:-:|:-:|:-:|
+| `ble-gatt` | ✔ | ✔ | ✔ |
+| `ble-coc` | – (Windows không hỗ trợ) | – | ✔ |
+
+### TC-21: PC hỗ trợ link nào
+
+| | |
+|---|---|
+| A (console) | `ctt-agent-console.exe caps` (hoặc menu 11) |
+| B (GUI) | Tab **1. Connect** → mục **Link** |
+| Mong đợi | Windows: `rfcomm yes`, `ble-gatt yes`, `ble-coc no … (Linux only)`. GUI: **BLE L2CAP CoC** bị làm mờ, có lý do bên dưới |
+
+### TC-22: Board chạy GATT server và quảng bá
+
+| | |
+|---|---|
+| Board (UART) | `$AGENT server -t gatt -J -i 1` (dừng `server` / `pipe` RFCOMM trước nếu muốn đọc trace dễ hơn; hai link chạy song song được) |
+| A (console) | `ctt-agent-console.exe ble-scan` |
+| B (GUI) | Link **BLE GATT** → **Scan** |
+| Mong đợi | Board: dòng `listening` có `"service_uuid":"a0c70001-…"`, `"advertising":true`. PC thấy `CTT-<hostname>` với địa chỉ `<ADDR>`. Nếu `advertising` là `false` thì ghi lại `advertising_error` (có thể một daemon khác đang chiếm slot quảng bá), rồi thử kết nối thẳng bằng `<ADDR>` |
+
+### TC-23: Terminal qua BLE GATT
+
+| | |
+|---|---|
+| Board (UART) | `$AGENT pipe --text -t gatt` |
+| A / B | Link `ble-gatt`, rồi làm TC-06 → TC-09b như Classic (menu 9 / tab **3. Terminal**) |
+| Mong đợi | Giống TC-06 → TC-09b. Dòng kết nối là `connected <ADDR> BLE GATT`. Tổng byte hai bên bằng nhau |
+
+### TC-24: Throughput / echo qua BLE GATT (BLE-TP-01…06)
+
+| | |
+|---|---|
+| Board (UART) | `$AGENT server -t gatt -i 1` (hoặc `systemctl start ctt-agent-ble` + `journalctl -f -u ctt-agent-ble`) |
+| A (console) | `ctt-agent-console.exe suite --addr <ADDR> --link ble-gatt`, hoặc từng lần: `run --addr <ADDR> --link ble-gatt -m tx -d 30 -b 244` |
+| B (GUI) | Link **BLE GATT**, tab **2. Throughput**, Block `244`, để trống Min Mbit/s → **▶ Start**, lần lượt cả 4 hướng |
+| Mong đợi | Trace hai bên mỗi giây như mục 3. `data: PC sent X, board received X`. `lost 0  crc 0`. Ghi lại Mbit/s từng chiều, RTT avg/p99, và ATT MTU (dòng `-J` của board: `att_mtu`) |
+
+### TC-25: BLE L2CAP CoC (chỉ PC Linux)
+
+| | |
+|---|---|
+| Board (UART) | `$AGENT server -t l2cap -o type=le -i 1` (PSM 0x0080) |
+| PC Linux | `python3 -m ctt.btapp suite --addr <ADDR> --link ble-coc` (cần `ctt-agent` cho PC: `build/host/agent/ctt-agent` hoặc `ctt-agent-x86_64` của release, đặt `CTT_HOST_AGENT`) |
+| Mong đợi | 6 case `OK`. So với TC-24: CoC thường nhanh hơn GATT vì ít overhead hơn |
+
+### TC-26: So sánh Classic và BLE
+
+| | |
+|---|---|
+| Làm | Chạy suite với `--link rfcomm` rồi `--link ble-gatt` trên cùng PC và board, cùng vị trí |
+| Mong đợi | Ghi hai bảng tổng kết cạnh nhau. Không có ngưỡng; dùng để biết chip trên board mạnh / yếu ở đâu |
+
+---
+
 ## Bảng ghi kết quả
 
 Build: board `ctt-agent ……`, PC `ctt-agent-console ……` / `ctt-agent.exe ……`, ngày ……, người test ……
@@ -297,5 +365,11 @@ Build: board `ctt-agent ……`, PC `ctt-agent-console ……` / `ctt-agent.exe 
 | TC-16 600 s | | | đầu / cuối Mbit/s: |
 | TC-17 mất kết nối | | | |
 | TC-19 lưu kết quả | | | |
+| TC-21 caps | | | |
+| TC-22 GATT server + quảng bá | | | advertising true/false: |
+| TC-23 terminal BLE GATT | | | |
+| TC-24 BLE-TP-01…06 (GATT) | | | up / down / RTT p99 / MTU: |
+| TC-25 BLE CoC (Linux) | – | – | up / down: |
+| TC-26 Classic vs BLE | | | |
 
 Trường hợp **có SSH tới board** (setup Local Test), app tự chạy agent trên board và in luôn trace của board (dòng `[board] …`). Xem [bt-app.md](bt-app.md).

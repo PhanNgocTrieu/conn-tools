@@ -14,8 +14,9 @@ from pathlib import Path
 from typing import Callable
 
 from ctt.bluetooth import pairing
-from ctt.bluetooth.board import Board, BoardPipe, bundled_agent
+from ctt.bluetooth.board import LE_PSM, Board, BoardPipe, bundled_agent
 from ctt.btapp.settings import AppSettings
+from ctt.protocol import links
 from ctt.protocol.ctp import CtpClient, Interval, Result, open_rfcomm
 
 EventFn = Callable[[dict], None]
@@ -27,10 +28,33 @@ class ServiceError(RuntimeError):
 
 @dataclass
 class Target:
-    """Where the PC connects: board address + RFCOMM channel (+ the board pipe, if any)."""
+    """Where the PC connects: board address + RFCOMM channel / LE PSM (+ the board pipe, if any)."""
     address: str
     channel: int
     pipe: BoardPipe | None = None
+    link: str = "rfcomm"
+
+    def describe(self) -> str:
+        if self.link == "ble-gatt":
+            return f"{self.address} BLE GATT"
+        if self.link == "ble-coc":
+            return f"{self.address} BLE L2CAP CoC PSM 0x{self.channel:04x}"
+        return f"{self.address} channel {self.channel}"
+
+
+def open_link(target: Target) -> tuple[socket.socket, Callable[[], None], dict]:
+    """Connected socket for CtpClient on the target's link, plus its closer and link details."""
+    if target.link == "rfcomm":
+        s = open_rfcomm(target.address, target.channel)
+        return s, s.close, {"link": "rfcomm", "channel": target.channel}
+    cap = links.supported(target.link)
+    if not cap.ok:
+        raise ServiceError(f"{links.LINK_LABELS[target.link]} is not available on this PC: {cap.why}")
+    if target.link == "ble-gatt":
+        ls = links.open_gatt(target.address)
+    else:
+        ls = links.open_le_coc(target.address, target.channel or LE_PSM)
+    return ls.sock, ls.close, ls.info
 
 
 @dataclass
@@ -43,11 +67,13 @@ class ThroughputParams:
 
 
 class TerminalSession:
-    """Raw two-way link: PC end is an RFCOMM socket, board end (optional) a BoardPipe."""
+    """Raw two-way link: PC end is a socket on the chosen link, board end (optional) a BoardPipe."""
 
     def __init__(self, sock: socket.socket, target: Target,
-                 on_pc_rx: Callable[[bytes], None], on_closed: Callable[[str], None]):
+                 on_pc_rx: Callable[[bytes], None], on_closed: Callable[[str], None],
+                 closer: Callable[[], None] | None = None):
         self.sock = sock
+        self._closer = closer or sock.close
         self.target = target
         self._on_pc_rx = on_pc_rx
         self._on_closed = on_closed
@@ -81,7 +107,7 @@ class TerminalSession:
     def close(self) -> None:
         self._closed = True
         try:
-            self.sock.close()
+            self._closer()
         except OSError:
             pass
         if self.target.pipe:
@@ -161,10 +187,13 @@ class BtTestService:
         if not self.settings.uses_ssh:
             if not addr:
                 raise ServiceError("enter the board Bluetooth address (Connect tab / console menu 1)")
-            return Target(addr, self.settings.server_channel())
+            return Target(addr, self.settings.server_channel(), link=self.settings.link)
         board = self._board_with_agent(auto_deploy)
-        b_addr, ch = board.start_server(self.settings.server_channel(), on_event=on_board_event)
-        return Target(addr or b_addr, ch)
+        b_addr, ch = board.start_server(self.settings.server_channel(), on_event=on_board_event,
+                                        link=self.settings.link)
+        if not (addr or b_addr):
+            raise ServiceError("board Bluetooth address unknown: enter it (Connect tab / console menu 1)")
+        return Target(addr or b_addr, ch, link=self.settings.link)
 
     def pipe_target(self, on_board_event: EventFn | None = None, auto_deploy: bool = False) -> Target:
         """Board raw pipe for the terminal (SSH), or a fixed server channel (no SSH)."""
@@ -172,12 +201,12 @@ class BtTestService:
         if not self.settings.uses_ssh:
             if not addr:
                 raise ServiceError("enter the board Bluetooth address")
-            return Target(addr, self.settings.server_channel())
+            return Target(addr, self.settings.server_channel(), link=self.settings.link)
         board = self._board_with_agent(auto_deploy)
-        board.stop_server()   # the server may hold the channel
-        pipe = board.start_pipe(self.settings.server_channel(), on_event=on_board_event)
+        board.stop_server()   # the server may hold the channel / the GATT service
+        pipe = board.start_pipe(self.settings.server_channel(), on_event=on_board_event, link=self.settings.link)
         b_addr, ch = pipe.endpoint
-        return Target(addr or b_addr, ch, pipe)
+        return Target(addr or b_addr, ch, pipe, link=self.settings.link)
 
     # ---- use cases -----------------------------------------------------------------------
 
@@ -187,14 +216,14 @@ class BtTestService:
         target = self.server_target(on_board_event, auto_deploy)
         if on_connect:
             on_connect(target)
-        sock = open_rfcomm(target.address, target.channel)
+        sock, closer, _info = open_link(target)
         try:
             self._client = CtpClient(sock)
             return self._client.run(params.mode, params.duration_s, params.block, params.rate_bps,
                                     params.verify, interval_s=1.0, on_interval=on_interval)
         finally:
             self._client = None
-            sock.close()
+            closer()
 
     def stop_throughput(self) -> bool:
         if self._client:
@@ -206,12 +235,12 @@ class BtTestService:
                       on_board_event: EventFn | None = None, auto_deploy: bool = False) -> TerminalSession:
         target = self.pipe_target(on_board_event, auto_deploy)
         try:
-            sock = open_rfcomm(target.address, target.channel)
+            sock, closer, _info = open_link(target)
         except Exception:
             if target.pipe:
                 target.pipe.close()
             raise
-        return TerminalSession(sock, target, on_pc_rx, on_closed)
+        return TerminalSession(sock, target, on_pc_rx, on_closed, closer)
 
     def close(self) -> None:
         self.stop_throughput()

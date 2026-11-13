@@ -3,7 +3,7 @@
 ## Sơ đồ
 
 ```
- WSL host                                          DUT (board, Yocto)
+ WSL host                                          DUT (Linux board)  
  ┌──────────────────────────────┐                  ┌──────────────────────────────┐
  │ ctt (Python)                 │ ── SSH ────────▶ │ ctt-agent server -t rfcomm   │
  │   bt: bluetoothctl (BlueZ)   │                  │   kernel RFCOMM / L2CAP      │

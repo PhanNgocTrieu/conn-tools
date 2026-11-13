@@ -1,5 +1,5 @@
 # WiFi UDP: real packet loss and jitter at fixed offered loads, plus link info.
-# The DUT (board) runs the agent server; point -e at its WiFi address if SSH
+# The DUT runs the agent server; point -e at its WiFi address if SSH
 # goes over Ethernet:
 #   ctt profile profiles/wifi_udp.yaml --dut root@<dut-eth-ip>       (edit `endpoint` below)
 #   ctt profile profiles/wifi_udp.yaml --dut root@<dut-wifi-ip>      (all over WiFi)

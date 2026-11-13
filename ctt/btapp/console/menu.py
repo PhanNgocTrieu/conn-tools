@@ -13,7 +13,8 @@ from typing import Callable
 
 from ctt import __version__
 from ctt.btapp.console.terminal import ConsoleTerminal
-from ctt.btapp.expectations import DEFAULT_SUITE, LEVELS, SuiteRunner, summary_lines, write_report
+from ctt.btapp.expectations import LEVELS, SuiteRunner, outcome_line, suite_for, summary_lines, write_report
+from ctt.protocol.links import LINK_LABELS, LINKS, ble_scan, capabilities
 from ctt.btapp.formatting import board_event_line, interval_line, result_lines
 from ctt.btapp.service import BtTestService, ThroughputParams
 from ctt.btapp.settings import AppSettings, SettingsStore
@@ -70,7 +71,7 @@ class ConsoleMenu:
         self.settings: AppSettings = self.store.load()
         self.svc = BtTestService(self.settings)
         self.items: list[tuple[str, str, Callable[[], None]]] = [
-            ("1", "Settings (board SSH / no SSH / BT address / channel)", self.configure),
+            ("1", "Settings (link Classic/BLE, board SSH / no SSH, BT address, channel)", self.configure),
             ("2", "Check board (SSH)", self.check_board),
             ("3", "Deploy agent to the board (SSH)", self.deploy),
             ("4", "Scan Bluetooth", self.scan),
@@ -79,7 +80,8 @@ class ConsoleMenu:
             ("7", "Unpair", self.unpair),
             ("8", "Throughput / latency test", self.throughput),
             ("9", "Terminal: send / receive data", self.terminal),
-            ("10", "Test suite with Mbit/s expectations (BT-TP-01..06)", self.suite),
+            ("10", "Test suite (BT-TP-01..06 Classic / BLE-TP-01..06 BLE, by the link)", self.suite),
+            ("11", "Links this PC supports (RFCOMM / BLE GATT / BLE CoC)", self.caps),
             ("0", "Exit", self.quit),
         ]
         self._running = True
@@ -89,8 +91,9 @@ class ConsoleMenu:
     def header(self) -> str:
         s = self.settings
         link = f"SSH {s.board}" if s.uses_ssh else "no SSH (agent already running on the board)"
+        where = f"channel: {s.channel}" if s.link == "rfcomm" else LINK_LABELS[s.link]
         return (f"\n=== CTT Bluetooth console {__version__} ===\n"
-                f"Board: {link} | BT: {s.address() or '?'} | channel: {s.channel}")
+                f"Link: {s.link} | Board: {link} | BT: {s.address() or '?'} | {where}")
 
     def run(self) -> int:
         ok, msg = self.svc.pairing_status()
@@ -124,8 +127,19 @@ class ConsoleMenu:
 
     # ---- actions -------------------------------------------------------------------------
 
+    def caps(self) -> None:
+        for c in capabilities():
+            print(f"  {c.link:<9} {'yes' if c.ok else 'no ':<4} {LINK_LABELS[c.link]:<28} {c.why}")
+
     def configure(self) -> None:
         s = self.settings
+        caps = {c.link: c for c in capabilities()}
+        for c in caps.values():
+            print(f"  {c.link:<9} {LINK_LABELS[c.link]:<28} {'' if c.ok else '(not on this PC: ' + c.why + ')'}")
+        s.link = ask("Link", s.link if s.link in LINKS else "rfcomm",
+                     lambda v: None if v in LINKS and caps[v].ok else
+                     (f"not available on this PC: {caps[v].why}" if v in LINKS else
+                      f"expected one of: {', '.join(LINKS)}"))
         s.no_ssh = not ask_yes("SSH to the board?", s.uses_ssh)
         if s.uses_ssh:
             s.board = ask("SSH board (user@ip)", s.board if validate_board(s.board) is None else "",
@@ -133,14 +147,19 @@ class ConsoleMenu:
             s.bt_addr = ask("Board BT address (empty = read over SSH)",
                             s.address() if validate_bt_addr(s.address()) is None else "",
                             validate_bt_addr).upper()
-            s.channel = ask("RFCOMM channel (auto = ask the board over SSH)", s.channel, validate_channel)
+            if s.link == "rfcomm":
+                s.channel = ask("RFCOMM channel (auto = ask the board over SSH)", s.channel, validate_channel)
         else:
             s.bt_addr = ask("Board BT address (empty = pick later with Scan / Paired devices)",
                             s.address() if validate_bt_addr(s.address()) is None else "",
                             validate_bt_addr).upper()
-            ch = s.channel if str(s.channel).isdigit() else "22"
-            s.channel = ask("RFCOMM channel on the board", ch,
-                            lambda v: None if v.isdigit() and 1 <= int(v) <= 30 else "expected a number 1-30")
+            if s.link == "rfcomm":
+                ch = s.channel if str(s.channel).isdigit() else "22"
+                s.channel = ask("RFCOMM channel on the board", ch,
+                                lambda v: None if v.isdigit() and 1 <= int(v) <= 30 else "expected a number 1-30")
+            else:
+                print("  On the board (UART): ctt-agent " + ("server -t gatt" if s.link == "ble-gatt"
+                                                             else "server -t l2cap -o type=le") + " -i 1")
         self.store.save(s)
         print("Saved.")
 
@@ -150,9 +169,11 @@ class ConsoleMenu:
         print(f"  host       : {info['hostname'] or '?'} ({info['arch']})")
         print(f"  agent      : {info['agent'] or 'MISSING -> choose 3 to deploy'}")
         print(f"  BT address : {info.get('bt_address') or '?'}")
-        print(f"  bt-manager : {fw.get('services', {}).get('bt-daemon', '-')}")
+        print(f"  profile    : {info.get('profile', '-')}")
+        for svc, state in fw.get("services", {}).items():
+            print(f"  {svc[:11]:<11}: {state}")
         if isinstance(fw.get("bt", {}).get("paired"), int):
-            print(f"  bond       : {fw['bt']['paired']}/5")
+            print(f"  bonds      : {fw['bt']['paired']}")
         self.store.save(self.settings)
 
     def deploy(self) -> None:
@@ -168,6 +189,16 @@ class ConsoleMenu:
             self.store.save(self.settings)
 
     def scan(self) -> None:
+        if self.settings.link != "rfcomm":
+            print("BLE scan (8 s), boards advertising the CTT service (ctt-agent server -t gatt)...")
+            devs = ble_scan(8, only_ctt=True)
+            for i, (addr, name, rssi) in enumerate(devs, 1):
+                print(f"  {i:2d}. {addr}  {rssi if rssi is not None else '?':>4} dBm  {name}")
+            print(f"  ({len(devs)} devices)")
+            if devs and ask_yes("Use one of them as the board?", True):
+                self.settings.bt_addr = devs[int(ask("Number", "1")) - 1][0]
+                self.store.save(self.settings)
+            return
         print("Scanning (10-15 s)...")
         self._devices(self.svc.scan(10))
 
@@ -205,17 +236,20 @@ class ConsoleMenu:
             lambda: self.svc.run_throughput(
                 params, on_interval=lambda iv: print(interval_line(iv)),
                 on_board_event=self._board_event,
-                on_connect=lambda t: print(f"RFCOMM connect {t.address} channel {t.channel}...")),
+                on_connect=lambda t: print(f"connect {t.describe()}...")),
             self.svc.stop_throughput)
         print("\n".join(result_lines(result)))
 
     def suite(self) -> None:
-        for c in DEFAULT_SUITE.cases:
+        suite = suite_for(self.settings.link)
+        print(f"Suite {suite.name} (link {self.settings.link})")
+        for c in suite.cases:
             print(f"  {c.id}  {c.mode:<5} block {c.block:<5} {c.duration_s:g}s  {c.title}")
-        level = ask(f"Level ({' / '.join(LEVELS)})", "baseline",
+        print("Level: measure = only record the numbers;  baseline / target = also PASS/FAIL on Mbit/s limits")
+        level = ask(f"Level ({' / '.join(LEVELS)})", "measure",
                     lambda v: None if v in LEVELS else f"expected one of: {', '.join(LEVELS)}")
         only = ask("Case ids, comma-separated (empty = all)", "")
-        cases = DEFAULT_SUITE.select(only.split(",") if only else None)
+        cases = suite.select(only.split(",") if only else None)
         runner = SuiteRunner(self.svc)
         print("Ctrl+C stops after the current case.")
         outcomes = self._run_in_worker(
@@ -224,12 +258,11 @@ class ConsoleMenu:
                 on_case=lambda i, c: print(f"\n[{i}/{len(cases)}] {c.id} {c.title} ({c.duration_s:g}s)"),
                 on_interval=lambda iv: print(interval_line(iv)),
                 on_board_event=self._board_event,
-                on_outcome=lambda o: print(f"  -> {'PASS' if o.ok else 'FAIL'} "
-                                           + (o.error or "  ".join(c.text() for c in o.checks[3:])))),
+                on_outcome=lambda o: print(outcome_line(o))),
             runner.stop)
         print()
         print("\n".join(summary_lines(outcomes)))
-        print(f"report: {write_report(outcomes, DEFAULT_SUITE, level, 'ctt-results')} (+ .csv)")
+        print(f"report: {write_report(outcomes, suite, level, 'ctt-results')} (+ .csv)")
 
     def _run_in_worker(self, work: Callable, stop: Callable):
         """Run `work` in a thread so Ctrl+C calls `stop` and the result is still returned."""

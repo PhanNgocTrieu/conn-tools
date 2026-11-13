@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ctt import __version__
 from ctt.cli.base import Command, CommandGroup
-from ctt.cli.options import add_dut_args, add_out_args, dut_agent_path, dut_executor, parse_kv
+from ctt.cli.options import add_dut_args, add_out_args, board_profile, dut_agent_path, dut_executor, parse_kv
 from ctt.core.executor import LocalExecutor
 from ctt.reporting.console import VERDICT_COLOR, color
 from ctt.reporting.writer import ReportWriter
@@ -17,13 +17,16 @@ class UsbGadgetCommand(Command):
     def configure(self, p):
         p.add_argument("action", choices=("up", "down", "status", "bind"))
         p.add_argument("--ncm", action="store_true", help="also add an NCM network function (usb0)")
-        p.add_argument("--keep-fw", action="store_true",
-                       help="fail instead of stopping usb-daemon (vendor image) to take the port")
+        p.add_argument("--keep-services", "--keep-fw", action="store_true", dest="keep_services",
+                       help="fail instead of stopping the daemons of usb.gadget_stop_services "
+                            "(board profile) that own the port")
         add_dut_args(p)
 
     def run(self, args):
         from ctt.interfaces import usb
-        r = usb.gadget(dut_executor(args), args.action, ncm=args.ncm, keep_fw=args.keep_fw)
+        prof = board_profile(args)
+        r = usb.gadget(dut_executor(args), args.action, ncm=args.ncm, keep_services=args.keep_services,
+                       stop_services=prof.gadget_stop_services, role_file=prof.role_file)
         print((r.stdout + r.stderr).strip())
         return r.returncode
 

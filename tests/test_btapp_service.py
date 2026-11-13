@@ -24,7 +24,7 @@ class FakePairing(PairingBackend):
         self.paired_with = []
 
     def scan(self, seconds=10):
-        return [Device("AA:BB:CC:DD:EE:01", "board"), Device("AA:BB:CC:DD:EE:02", "Phone")]
+        return [Device("AA:BB:CC:DD:EE:01", "test-board"), Device("AA:BB:CC:DD:EE:02", "Phone")]
 
     def paired(self):
         return [Device(a, "", True) for a in self.paired_with]
@@ -138,9 +138,9 @@ class ConsoleMenuTest(unittest.TestCase):
             return out.getvalue(), store.load()
 
     def test_configure_scan_select_and_pair(self):
-        keys = ["1", "n", "", "", "4", "y", "1", "6", "", "0"]
+        keys = ["1", "", "n", "", "", "4", "y", "1", "6", "", "0"]   # link: Enter = rfcomm
         out, saved = self.run_menu(keys)
-        self.assertIn("board", out)
+        self.assertIn("test-board", out)
         self.assertIn("Passkey: 123456", out)
         self.assertIn("OK  Pairing successful", out)
         self.assertTrue(saved.no_ssh)
@@ -149,8 +149,9 @@ class ConsoleMenuTest(unittest.TestCase):
     def test_settings_reject_invalid_values(self):
         # SSH = "maybe" (asked again) -> y; board "y" -> root@b; address "Y" -> lower-case valid;
         # channel "99" -> auto
-        keys = ["1", "maybe", "y", "y", "root@b", "Y", "aa:bb:cc:dd:ee:02", "99", "auto", "0"]
+        keys = ["1", "bogus", "rfcomm", "maybe", "y", "y", "root@b", "Y", "aa:bb:cc:dd:ee:02", "99", "auto", "0"]
         out, saved = self.run_menu(keys)
+        self.assertIn("expected one of: rfcomm, ble-gatt, ble-coc", out)
         self.assertIn("answer y or n", out)
         self.assertIn("expected user@ip", out)
         self.assertIn("expected AA:BB:CC:DD:EE:FF", out)

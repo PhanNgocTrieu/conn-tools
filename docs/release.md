@@ -6,7 +6,7 @@ GitHub Actions ([.github/workflows/btapp.yml](../.github/workflows/btapp.yml)) b
 
 | File | Chạy trên | Ghi chú |
 |---|---|---|
-| `ctt-agent-aarch64` | Board board (Linux aarch64) | Static, đã strip. Chép lên board thành `/tmp/ctt-agent` rồi `chmod +x` |
+| `ctt-agent-aarch64` | Board Linux aarch64 | Static, đã strip. Chép lên board thành `/tmp/ctt-agent` rồi `chmod +x` |
 | `ctt-agent-x86_64` | Linux / WSL x86_64 | Static. Đổi tên thành `ctt-agent` nếu muốn |
 | `ctt-agent.exe` | Windows | App cửa sổ (GUI): pair, throughput có biểu đồ, terminal |
 | `ctt-agent-console.exe` | Windows | Console: menu và lệnh con, chạy được qua SSH |
@@ -94,7 +94,7 @@ Máy build công ty không lấy được gì từ GitHub, nên recipe dùng sou
 
 ```bash
 git checkout v0.2.0
-scripts/export-recipe.sh /path/to/meta-project/recipes-project/ctt-agent   # PV = "0.2.0", SOURCE-COMMIT = commit của tag
+scripts/export-recipe.sh <layer>/recipes-connectivity/ctt-agent   # PV = "0.2.0", SOURCE-COMMIT = commit của tag
 ```
 
-Rồi commit thư mục đó vào git của `meta-project`. Chi tiết: [yocto-recipe.md](yocto-recipe.md).
+Rồi commit thư mục đó vào git của layer. Chi tiết: [yocto-recipe.md](yocto-recipe.md).

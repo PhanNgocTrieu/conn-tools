@@ -34,7 +34,7 @@ class ConsoleTerminal:
             on_closed=lambda why: print(f"\r[link closed] {why}"),
             on_board_event=self._board_event, auto_deploy=self.auto_deploy)
         t = session.target
-        print(f"connected {t.address} channel {t.channel}. {HELP}")
+        print(f"connected {t.describe()}. {HELP}")
         try:
             while True:
                 line = input("> ")

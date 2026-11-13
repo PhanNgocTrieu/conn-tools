@@ -1,5 +1,5 @@
 # Bluetooth Classic throughput: RFCOMM (SPP-like) and L2CAP BR/EDR.
-# The agent server runs on the DUT (board); the WSL host connects through a
+# The agent server runs on the DUT; the WSL host connects through a
 # USB BT dongle attached with usbipd. Pair first:
 #   ctt bt pair --dut root@<dut-ip> [--dut-accept]
 #   ctt profile profiles/bt_rfcomm_throughput.yaml --dut root@<dut-ip>

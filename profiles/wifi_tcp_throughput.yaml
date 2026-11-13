@@ -1,4 +1,4 @@
-# WiFi throughput, DUT (board) as server, host in WSL (networkingMode=mirrored)
+# WiFi throughput, DUT as server, host in WSL (networkingMode=mirrored)
 #   ctt profile profiles/wifi_tcp_throughput.yaml --dut root@<DUT-WiFi-IP>
 # Adjust the expect thresholds to the product requirement.
 name: wifi-tcp-throughput

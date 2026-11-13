@@ -8,7 +8,7 @@
 #
 # Steps:
 #   1. host    ctt-agent for WSL/Linux (+ tests)     scripts/build-host.sh
-#   2. board   ctt-agent for the board (aarch64)   scripts/build-dut.sh --generic --static --strip
+#   2. board   ctt-agent for the board (aarch64)     scripts/build-dut.sh --generic --static --strip
 #   3. exe     ctt-agent-console.exe + ctt-agent.exe    scripts/build-windows.sh (embeds the board agent)
 # A failed step does not stop the others; the report shows what failed and where the log is.
 # The report is also saved to dist/BUILD-REPORT.txt. Exit code 0 only if every step passed.
@@ -96,7 +96,7 @@ report() {
     echo " [WSL / Linux]"
     artifact host build/host/agent/ctt-agent "build/host/agent/ctt-agent version   (CLI: python3 -m ctt selftest)"
     echo "      apps without .exe: python3 -m ctt.btapp console   |   python3 -m ctt.btapp (window, needs python3-tk)"
-    echo " [Board board]"
+    echo " [Board (Linux aarch64)]"
     artifact board build/dut/agent/ctt-agent "copy to the board (python3 -m ctt deploy, USB stick or UART), then: /tmp/ctt-agent version"
     echo " [Windows]"
     artifact exe dist/ctt-agent-console.exe "PowerShell: .\\dist\\ctt-agent-console.exe   |   WSL: dist/ctt-agent-console.exe"

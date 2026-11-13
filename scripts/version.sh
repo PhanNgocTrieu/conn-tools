@@ -26,6 +26,7 @@ set)
     sed -i "s/^project(connectivity-tools VERSION [0-9.]*/project(connectivity-tools VERSION $v/" "$CM"
     sed -i "s/^version = \".*\"/version = \"$v\"/" "$PP"
     sed -i "s/^__version__ = \".*\"/__version__ = \"$v\"/" "$PY"
+    sed -i "s/^PV = \"[^\"]*\"/PV = \"$v\"/" "$ROOT/yocto/recipe-local-src/ctt-agent.bb"   # recipe template (source kept in the layer)
     "$0" show
     ;;
 check)

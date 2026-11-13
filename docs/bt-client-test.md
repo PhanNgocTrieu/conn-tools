@@ -50,12 +50,11 @@ mount /dev/sda1 /mnt && cp /mnt/ctt-agent /tmp/ && chmod +x /tmp/ctt-agent
 ```sh
 dmesg -n 1                                    # giảm log kernel cho UART đỡ rối
 hciconfig -a                                  # có hci0, trạng thái UP; ghi lại "BD Address" = <ADDR>
-systemctl is-active bt-daemon
-which bt-daemon-cli.sh                # script này nằm trong thư mục test/ của vendor, image khách có thể KHÔNG có
-bt-daemon-cli.sh get-paired-devices   # tối đa 5 bond; đủ 5 thì: bt-daemon-cli.sh remove <addr>
+systemctl is-active bluetooth                 # bluetoothd
+bluetoothctl devices Paired                   # các bond đang có; xóa bớt: bluetoothctl remove <addr>
 ```
 
-- Nếu image **không có** `bt-daemon-cli.sh`: pair bằng `bluetoothctl` (`agent NoInputNoOutput`, `default-agent`, `pairable on`, `discoverable on`), hoặc gọi D-Bus của bt-daemon trực tiếp.
+- Nếu Bluetooth của board do một daemon riêng của sản phẩm quản lý (nó là agent mặc định), hãy dùng công cụ của daemon đó để bật pairable/discoverable và xác nhận pairing, thay cho `bluetoothctl` ở bước 4.
 - **Phải chốt được cách pair trước khi sang bước 4.**
 
 **Xong khi** có `hci0` UP, biết `<ADDR>`, biết cách bật pairable/discoverable.
@@ -76,11 +75,13 @@ bt-daemon-cli.sh get-paired-devices   # tối đa 5 bond; đủ 5 thì: bt-daemo
 
 | # | UART (board) | SSH (Client PC) |
 |---|---|---|
-| 1 | `bt-daemon-cli.sh set-pairable true` | |
-| 2 | `bt-daemon-cli.sh set-discoverable true` | |
+| # | UART (board, trong `bluetoothctl`) | SSH (Client PC) |
+|---|---|---|
+| 1 | `power on`, `agent NoInputNoOutput`, `default-agent` | |
+| 2 | `pairable on`, `discoverable on` | |
 | 3 | | `ctt-agent-console.exe scan` → thấy `<ADDR>` |
 | 4 | | `ctt-agent-console.exe pair <ADDR>` |
-| 5 | `bt-daemon-cli.sh confirm-pairing`, chạy ngay khi PC đang pair | |
+| 5 | Khi hiện `Confirm passkey … (yes/no)`: gõ `yes` | |
 | 6 | | `ctt-agent-console.exe paired` → có `<ADDR>` |
 
 **Xong khi** PC báo `Pairing successful`, và mã 6 số (nếu có) trùng với mã board in ra.
@@ -165,7 +166,7 @@ session done: received 150.5 KB (152 fr) in 3.0 s = 0.403 Mbps, lost=0 crc_err=0
 - Có SSH thì không cần nhìn UART: console và tab Throughput in luôn các dòng `[board] … received …` lấy từ agent trên board.
 - `suite -q` tắt trace, chỉ in kết quả từng case.
 
-Mọi case cũng phải có mất gói 0, lỗi CRC 0. Giải thích ngưỡng và level `baseline`: [bt-test-cases.md](bt-test-cases.md#ngưỡng-pass).
+Mọi case cũng phải có mất gói 0, lỗi CRC 0. Giải thích ngưỡng và level `baseline`: [bt-test-cases.md](bt-test-cases.md#level-chỉ-đo-hoặc-có-ngưỡng-pass).
 
 Chạy riêng từng case:
 ```
@@ -203,7 +204,7 @@ Muốn đo kỹ hơn thì chạy tiếp:
 | `RFCOMM socket: … (kernel built without CONFIG_BT_RFCOMM?)` | Kernel không có RFCOMM: xem [yocto-recipe.md](yocto-recipe.md) bước 5 |
 | `rfcomm listen …/22: Address already in use` | Channel 22 đang bận (có thể `ctt-agent-bt.service` đang chạy). `systemctl stop ctt-agent-bt`, hoặc thử `-e /23` và dùng `--channel 23` ở PC |
 | Scan không thấy board | Chưa `set-discoverable true`, hoặc `hci0` đang DOWN |
-| Pair lỗi `CapacityReached` | Đủ 5 bond: `bt-daemon-cli.sh remove <addr>` |
+| Pair lỗi vì đủ số bond | Trên board: `bluetoothctl devices Paired`, rồi `bluetoothctl remove <addr>` |
 | `RFCOMM connect … [WinError 10060/10064]` | Chưa pair, sai channel, hoặc chưa chạy `ctt-agent server` / `pipe` trên board |
 | `bad CTP magic` khi `run` | Board đang chạy `pipe` chứ không phải `server` |
 | SSH vào Client PC chạy `.exe` không ra gì | Phải dùng `ctt-agent-console.exe`. `ctt-agent.exe` là app cửa sổ, chạy qua SSH sẽ không hiện |

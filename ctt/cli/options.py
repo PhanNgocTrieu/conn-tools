@@ -23,6 +23,9 @@ def add_dut_args(p: argparse.ArgumentParser) -> None:
     g.add_argument("--dut-agent", default=None,
                    help=f"ctt-agent path on the DUT (default {DEFAULT_DUT_AGENT})")
     g.add_argument("--host-agent", default=None, help="ctt-agent path on this machine")
+    g.add_argument("--board-profile", default=None,
+                   help="board profile YAML/JSON (default: $CTT_BOARD_PROFILE, board.yaml, "
+                        "configs/board.yaml, configs/board.private.yaml; none = plain BlueZ)")
 
 
 def add_test_args(p: argparse.ArgumentParser) -> None:
@@ -90,3 +93,9 @@ def dut_agent_path(args, dut: Executor) -> str:
 
 def warn(message: str) -> None:
     print(color(f"warning: {message}", "33"), file=sys.stderr)
+
+
+def board_profile(args):
+    """The board profile for this command (--board-profile, $CTT_BOARD_PROFILE or found by name)."""
+    from ctt.platform.board import load_profile
+    return load_profile(getattr(args, "board_profile", None))

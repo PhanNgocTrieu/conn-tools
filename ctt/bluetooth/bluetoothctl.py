@@ -136,7 +136,7 @@ class BluetoothCtl:
         self.send("version")
         _, m = self.expect([r"Version \d+\.\d+"], timeout)
         with self._cond:
-            # Drop interactive prompts ("[bluetooth]# ", "[board]# ") that may
+            # Drop interactive prompts ("[bluetooth]# ", "[my-board]# ") that may
             # precede output on the same line.
             return _PROMPT.sub("", self._buf[start:m.start()])
 

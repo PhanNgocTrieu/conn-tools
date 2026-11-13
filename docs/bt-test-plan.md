@@ -1,6 +1,6 @@
 # Test plan Bluetooth: board ↔ PC
 
-> Phạm vi: kết nối Bluetooth Classic (RFCOMM) giữa board board và PC: pairing, kết nối, gửi/nhận dữ liệu, throughput, latency, độ ổn định.
+> Phạm vi: kết nối Bluetooth Classic (RFCOMM) giữa board Linux và PC: pairing, kết nối, gửi/nhận dữ liệu, throughput, latency, độ ổn định.
 > Công cụ: `ctt-agent.exe` / `ctt-agent-console.exe` trên PC, `ctt-agent` trên board ([bt-app.md](bt-app.md)). Test case chi tiết: [bt-test-cases.md](bt-test-cases.md).
 
 ## 1. Hiện trạng: hai setup
@@ -54,10 +54,10 @@ Hai điểm khác biệt quyết định cách test:
 ### Giai đoạn 2: Chuẩn bị Client Test
 | Việc | Cách làm |
 |---|---|
-| Có agent trên board mà không cần mạng | Đưa `ctt-agent` vào image (recipe trong `meta-project`, xem [yocto-recipe.md](yocto-recipe.md)) và bật `ctt-agent-bt.service` (channel 22). Tạm thời có thể copy bằng USB stick, hoặc truyền qua UART (`lrzsz`, base64) |
+| Có agent trên board mà không cần mạng | Đưa `ctt-agent` vào image (recipe Yocto, xem [yocto-recipe.md](yocto-recipe.md)) và bật `ctt-agent-bt.service` (channel 22). Tạm thời có thể copy bằng USB stick, hoặc truyền qua UART (`lrzsz`, base64) |
 | Truy cập Client PC | Bật OpenSSH Server trên Client PC; copy `ctt-agent-console.exe` sang; cắm dongle |
 | Truy cập UART | Mở terminal serial (PuTTY / `screen /dev/ttyUSB0 115200`) tới board, đăng nhập root |
-| Thủ tục pairing phía board | `bt-daemon-cli.sh set-pairable true / set-discoverable true / confirm-pairing` (xem [bt-app.md](bt-app.md#chuẩn-bị-board-khi-không-có-ssh)) |
+| Thủ tục pairing phía board | `bluetoothctl` (agent, pairable, discoverable), hoặc công cụ của daemon BT riêng của board, khai báo trong board profile (xem [bt-app.md](bt-app.md#chuẩn-bị-board-khi-không-có-ssh)) |
 
 **Điều kiện qua:** từ Local PC, SSH vào Client PC chạy được `ctt-agent-console.exe --version`; trên UART, `ctt-agent version` chạy được.
 
@@ -93,7 +93,7 @@ Test case chi tiết viết cho Client Test với 2 tổ hợp: **A** = board UA
 |---|---|
 | Toàn vẹn dữ liệu (mọi test) | mất gói = 0, lỗi CRC = 0, sai thứ tự = 0 |
 | Pairing | ≥ 98% thành công trên 50 lần (pair-stress) |
-| Throughput mỗi chiều | Level `target`: PC→board và board→PC **≥ 1.0 Mbit/s** (block 990 và 4096); `bidir` mỗi chiều **≥ 0.5 Mbit/s**. Level `baseline` (regression của LT): PC→board ≥ 0.25, board→PC ≥ 0.40 Mbit/s. Bảng đầy đủ: [bt-test-cases.md](bt-test-cases.md#ngưỡng-pass) |
+| Throughput mỗi chiều | Level `target`: PC→board và board→PC **≥ 1.0 Mbit/s** (block 990 và 4096); `bidir` mỗi chiều **≥ 0.5 Mbit/s**. Level `baseline` (regression của LT): PC→board ≥ 0.25, board→PC ≥ 0.40 Mbit/s. Bảng đầy đủ: [bt-test-cases.md](bt-test-cases.md#level-chỉ-đo-hoặc-có-ngưỡng-pass) |
 | RTT (`echo`, block 64 B) | p99 ≤ 100 ms (`target`), ≤ 250 ms (`baseline`). Chốt lại sau Giai đoạn 1 |
 | Long run | 10 phút `bidir` không rớt kết nối; throughput không giảm quá 20% so với phút đầu |
 
@@ -117,5 +117,5 @@ Test case chi tiết viết cho Client Test với 2 tổ hợp: **A** = board UA
 
 - **Dongle trên board ở LT** có hiệu năng khác chip trên board, nên không dùng số LT để chấp nhận sản phẩm.
 - **Stack Bluetooth của Windows** có thể là nút cổ chai (xem `report.md`). Cần đối chứng bằng host Linux.
-- **bt-daemon giới hạn 5 bond.** Pair lặp lại nhiều lần sẽ lỗi `CapacityReached`, nên dọn bond trước khi test.
+- **Board có thể giới hạn số bond** (đặt `bluetooth.max_bonds` trong board profile để app cảnh báo). Pair lặp lại nhiều lần thì dọn bond trước khi test.
 - **UART** chậm và dễ lẫn log của kernel. Nên giảm log level (`dmesg -n 1`) khi chạy agent bằng tay.

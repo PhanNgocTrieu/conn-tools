@@ -3,8 +3,8 @@
 Uses `iw dev <if> link` when available, else /proc/net/wireless (signal and
 link quality only). Works locally and over SSH.
 
-When the interface is an access point (the vendor head unit runs hostapd on wlan0
-for wireless CarPlay), `iw dev <if> link` has nothing to say; the link is then
+When the interface is an access point (hostapd on wlan0,
+e.g. wireless projection), `iw dev <if> link` has nothing to say; the link is then
 described from `iw dev <if> info` (channel, width) and `iw dev <if> station
 dump` (one entry per client: signal, bitrates). The client to report is the
 one whose MAC is given (`station=`), else the strongest one.

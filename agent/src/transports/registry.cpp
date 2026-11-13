@@ -11,6 +11,7 @@ std::unique_ptr<Transport> make_rfcomm_transport();
 std::unique_ptr<Transport> make_l2cap_transport();
 std::unique_ptr<Transport> make_unix_transport();
 std::unique_ptr<Transport> make_usb_transport();
+std::unique_ptr<Transport> make_gatt_transport();
 
 namespace {
 const std::vector<std::unique_ptr<Transport>>& registry() {
@@ -20,6 +21,7 @@ const std::vector<std::unique_ptr<Transport>>& registry() {
         v.push_back(make_udp_transport());
         v.push_back(make_rfcomm_transport());
         v.push_back(make_l2cap_transport());
+        v.push_back(make_gatt_transport());
         v.push_back(make_usb_transport());
         v.push_back(make_unix_transport());
         return v;

@@ -31,11 +31,13 @@ class SpecSuite:
                              on_event=lambda side, ev: print_live_event(side, ev, quiet))
 
     def firmware_preflight(self, transports: set[str]) -> None:
-        """Warns when a test would collide with the vendor firmware daemons on the DUT."""
+        """Warns when a test would collide with what runs on the board (board profile)."""
         if isinstance(self.dut, LocalExecutor) or os.environ.get("CTT_NO_FW_CHECK"):
             return
-        from ctt.firmware import vendor_daemons as fw
-        for w in fw.warnings_for(fw.status(self.dut), transports, False):
+        from ctt.cli.options import board_profile
+        from ctt.platform import board
+        prof = board_profile(self.args)
+        for w in board.warnings_for(board.status(self.dut, prof), transports, False, prof):
             warn(w)
 
     def run(self, run_name: str, specs: list[TestSpec]) -> int:

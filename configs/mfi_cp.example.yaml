@@ -5,8 +5,8 @@
 # Copy to configs/mfi_cp.private.yaml (git-ignored), then fill in the values
 # from the Apple MFi Accessory Interface Specification for your coprocessor
 # (2.0C / 3.0) and point `bus` at the real adapter:
-#     bus: 1               # /dev/i2c-1: bus of the MFi CP on the vendor board (vendor-i2c-test default)
-#     address: 0x10        # 7-bit address (vendor-i2c-test default; check the schematic)
+#     bus: 1               # /dev/i2c-1: bus of the MFi CP on your board (check the schematic)
+#     address: 0x10        # 7-bit address (check the schematic)
 #
 #   python3 -m ctt mfi configs/mfi_cp.private.yaml --dut root@<dut-ip>
 #

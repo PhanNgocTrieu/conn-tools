@@ -17,7 +17,7 @@ from ctt.testing.runner import Runner, TestSpec  # noqa: E402
 
 LIST = """usb1|1d6b|0002|480|09|Linux 6.1 ehci_hcd|EHCI Host Controller
 1-1|0781|5581|480|00|SanDisk|Ultra
-1-2|1d6b|0104|5000|00|CTT|CTT board test gadget
+1-2|1d6b|0104|5000|00|CTT|CTT test gadget
 garbage line
 """
 
@@ -28,7 +28,7 @@ class UsbTest(unittest.TestCase):
         self.assertEqual(len(devs), 3)
         self.assertTrue(devs[0]["root_hub"])
         self.assertEqual((devs[1]["id"], devs[1]["speed_mbps"]), ("0781:5581", 480.0))
-        self.assertEqual(devs[2]["product"], "CTT board test gadget")
+        self.assertEqual(devs[2]["product"], "CTT test gadget")
 
     def test_gadget_script_syntax(self):
         subprocess.run(["sh", "-n", str(usb.GADGET_SCRIPT)], check=True)

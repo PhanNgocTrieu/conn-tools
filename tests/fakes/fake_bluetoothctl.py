@@ -18,7 +18,7 @@ import time
 CTRL = os.environ.get("FAKE_BT_CTRL", "11:22:33:44:55:66")
 PAIR_MODE = os.environ.get("FAKE_BT_PAIR", "confirm")
 DISCOVERABLE = {}
-for item in filter(None, os.environ.get("FAKE_BT_DEVICES", "AA:BB:CC:DD:EE:01=board").split(",")):
+for item in filter(None, os.environ.get("FAKE_BT_DEVICES", "AA:BB:CC:DD:EE:01=test-board").split(",")):
     addr, _, name = item.partition("=")
     DISCOVERABLE[addr.upper()] = name
 

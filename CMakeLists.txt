@@ -27,6 +27,6 @@ if(CTT_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
              COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests
              WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
     set_tests_properties(python PROPERTIES
-             ENVIRONMENT "CTT_AGENT=$<TARGET_FILE:ctt-agent>" TIMEOUT 600)
+             ENVIRONMENT "CTT_AGENT=$<TARGET_FILE:ctt-agent>;CTT_BOARD_PROFILE=none" TIMEOUT 600)
   endif()
 endif()

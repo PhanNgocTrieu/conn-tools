@@ -1,18 +1,16 @@
-# Đưa `ctt-agent` vào image Yocto của dự án (meta-project)
+# Đưa `ctt-agent` vào image Yocto của board
 
-Mục tiêu: build `ctt-agent` cùng image của board, để agent có sẵn ở `/usr/bin/ctt-agent`. Có agent sẵn trong image thì làm được Client Test (board khách chỉ có UART, xem [bt-client-test.md](bt-client-test.md)) mà không phải chép file bằng USB hay UART.
+Mục tiêu: build `ctt-agent` cùng image của board, để agent có sẵn ở `/usr/bin/ctt-agent`, kèm các service systemd (tắt sẵn). Khi agent đã nằm trong image, test qua UART không cần chép file bằng USB stick (xem [bt-client-test.md](bt-client-test.md)).
 
-Tài liệu viết theo cấu trúc BSP hiện tại:
+Áp dụng cho mọi BSP Yocto có systemd. Trong tài liệu này:
 
-| | Giá trị trong dự án |
-|---|---|
-| Yocto | **scarthgap** (poky có `bluez5_5.72`, `systemd_255`, `gcc_13.4`) |
-| Layer của dự án | `layers/meta-project` (các recipe vendor nằm ở `recipes-project/`, `recipes-3rdparty/`, `recipes-drv/`…) |
-| Image connectivity | `meta-project/recipes-core/images/project-image.bb` |
-| Mẫu cấu hình build | `meta-project/conf/local_conf/board-sub/conf/{local.conf, bblayers.conf, srcrev.inc}` (và `board-main`) |
-| Kernel | `meta-project/recipes-kernel/linux/linux-vendor_%.bbappend` kèm các fragment `.cfg` (`PROJECT_Bluetooth.cfg`…) |
+| Ký hiệu | Nghĩa | Ví dụ |
+|---|---|---|
+| `<layer>` | layer của dự án, nơi đặt recipe | `meta-myproduct` |
+| `<image>` | image cần thêm agent | `core-image-base`, `my-product-image` |
+| `<build>` | thư mục build (đã `source oe-init-build-env`) | `build/` |
 
-> Nếu image chạy connectivity không phải `project-image` / `board-sub`, thay tên tương ứng ở các bước dưới.
+Agent chỉ dùng các interface của kernel (socket Bluetooth, configfs, i2c-dev) và D-Bus của BlueZ cho BLE GATT. Không cần thư viện ngoài nào: chỉ cần CMake ≥ 3.16, một compiler C++17 và pthread.
 
 ---
 
@@ -20,180 +18,131 @@ Tài liệu viết theo cấu trúc BSP hiện tại:
 
 | Cách | Làm gì | Khi nào nên dùng |
 |---|---|---|
-| **A. Recipe trong `meta-project`** (khuyến nghị) | Thêm thư mục `meta-project/recipes-project/ctt-agent/`, source chép kèm | Máy build công ty không truy cập được GitHub; mọi recipe nằm trong một layer, không phải sửa `bblayers.conf` |
-| B. Thêm layer `meta-ctt` | `bitbake-layers add-layer …/connectivity-tools/yocto/meta-ctt` | Chỉ dùng được khi máy build clone được repo CTT (recipe này tải bằng `git://`) |
+| **A. Source đặt cạnh recipe** (khuyến nghị) | `scripts/export-recipe.sh <layer>/recipes-connectivity/ctt-agent` | Máy build không truy cập được repo này (mạng nội bộ, không có tài khoản). Recipe dùng `file://`, không cần mạng |
+| B. Thêm layer `meta-ctt` | `bitbake-layers add-layer …/connectivity-tools/yocto/meta-ctt` | Máy build clone được repo. Recipe dùng `git://` và ghim `SRCREV` |
 
-Phần dưới làm theo **cách A**. Cách B dùng đúng các file trong [yocto/meta-ctt](../yocto/meta-ctt), chỉ khác ở bước thêm layer ([yocto/meta-ctt/README.md](../yocto/meta-ctt/README.md)).
-
-`conf/layer.conf` của `meta-project` phải match được `recipes-*/*/*.bb` (thường là có sẵn). Kiểm tra bằng:
+`conf/layer.conf` của `<layer>` phải match được `recipes-*/*/*.bb` (thường đã có sẵn):
 
 ```bash
-grep BBFILES layers/meta-project/conf/layer.conf
+grep BBFILES <layer>/conf/layer.conf
 ```
 
-## 2. Tạo recipe (source nằm cạnh recipe, không tải từ git)
+## 2. Cách A: xuất recipe kèm source
 
-Máy build ở công ty **không clone được repo GitHub cá nhân**, nên recipe không dùng `git://`. Source của `ctt-agent` được chép thẳng vào layer, giống cách `bt-daemon` và `usb-daemon` đang làm (`SRC_URI = "file://…"`). Bitbake không cần mạng và không cần `SRCREV`.
+Chạy ở máy có repo connectivity-tools, rồi mang thư mục kết quả vào `<layer>`:
 
-Cấu trúc:
+```bash
+cd connectivity-tools
+scripts/export-recipe.sh <layer>/recipes-connectivity/ctt-agent    # hoặc không đối số: out/ctt-agent-recipe
+```
+
+Kết quả:
 
 ```
-meta-project/recipes-project/ctt-agent/
-├── ctt-agent.bb
+<layer>/recipes-connectivity/ctt-agent/
+├── ctt-agent.bb                      # lần đầu chép từ yocto/recipe-local-src/ctt-agent.bb
 └── files/
-    ├── ctt-agent-bt.service          # server RFCOMM channel 22 (systemd)
-    └── ctt-agent/                    # source C++ (~340 KB, 51 file)
+    ├── ctt-agent-bt.service          # server RFCOMM channel 22 (tắt sẵn)
+    ├── ctt-agent-ble.service         # server BLE GATT (tắt sẵn)
+    └── ctt-agent/                    # source C++ (~350 KB)
         ├── CMakeLists.txt
-        ├── SOURCE-COMMIT             # commit connectivity-tools đã dùng để chép
+        ├── SOURCE-COMMIT             # commit connectivity-tools đã dùng
         ├── agent/{CMakeLists.txt, include/, src/}
         └── scripts/dut-usb-gadget.sh # cài thành /usr/bin/ctt-usb-gadget
 ```
 
-**Tạo thư mục này** ở máy có repo connectivity-tools (máy cá nhân), rồi đem thư mục `ctt-agent/` lên công ty:
-
-```bash
-cd connectivity-tools
-scripts/export-recipe.sh                       # mặc định ghi vào recipes-project/ctt-agent/
-# hoặc ghi thẳng vào layer:  scripts/export-recipe.sh /path/to/layers/meta-project/recipes-project/ctt-agent
-```
-
 Script chỉ chép file, không build:
-- chép source vào `files/ctt-agent/` (xóa bản cũ trước) và chép file service;
+- chép source vào `files/ctt-agent/` (xóa bản cũ trước) và chép các file service;
 - ghi commit vào `SOURCE-COMMIT` (thêm `-dirty` nếu lúc chép có sửa đổi chưa commit);
-- lần đầu (thư mục chưa có `.bb`): chép recipe mẫu [yocto/recipe-local-src/ctt-agent.bb](../yocto/recipe-local-src/ctt-agent.bb). Đã có `.bb` thì không ghi đè, chỉ cập nhật dòng `PV` theo version trong `CMakeLists.txt`.
+- thư mục chưa có `.bb` thì chép recipe mẫu [yocto/recipe-local-src/ctt-agent.bb](../yocto/recipe-local-src/ctt-agent.bb). Đã có `.bb` thì không ghi đè, chỉ cập nhật dòng `PV` theo version trong `CMakeLists.txt`.
 
-`ctt-agent.bb` (bản mẫu trong repo: `yocto/recipe-local-src/ctt-agent.bb`):
+Recipe mẫu:
 
 ```bitbake
-# =============================================================
-# Metadata
-# =============================================================
-SUMMARY = "CTT agent - connectivity test endpoint (TCP/UDP/RFCOMM/L2CAP/USB/I2C)"
-DESCRIPTION = "Server/client of the Connectivity Test Tool: throughput, latency, loss and \
-integrity over WiFi, Bluetooth and USB. Uses only kernel interfaces (no libbluetooth / libusb)."
+SUMMARY = "CTT agent - connectivity test endpoint (TCP/UDP/RFCOMM/L2CAP/BLE GATT/USB/I2C)"
 LICENSE = "CLOSED"
 
-# =============================================================
-# Source
-# =============================================================
-# Source kept in this layer next to the recipe (files/ctt-agent/), like bt-daemon:
-# no git fetch, no network, no SRCREV. The source commit is in files/ctt-agent/SOURCE-COMMIT.
-# Refresh it from the connectivity-tools tree with:  scripts/export-recipe.sh <this folder>
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 SRC_URI = " \
     file://ctt-agent \
     file://ctt-agent-bt.service \
+    file://ctt-agent-ble.service \
 "
-PV = "0.1.0"   # = version in CMakeLists.txt; export-recipe.sh keeps it equal
+PV = "0.2.0"   # = version in CMakeLists.txt; export-recipe.sh keeps it equal
 S = "${WORKDIR}/ctt-agent"
 
-# =============================================================
-# Build
-# =============================================================
 inherit cmake systemd features_check
 REQUIRED_DISTRO_FEATURES = "systemd"
-
-# Unit tests need the host toolchain; the image only needs the binary.
 EXTRA_OECMAKE = "-DCTT_BUILD_TESTS=OFF"
 
-# =============================================================
-# Service
-# =============================================================
-# RFCOMM server on channel 22 for ctt-bt / ctt-agent-console when the PC has no SSH to the board.
-# Installed but disabled: enable it only in test images, e.g. in local.conf
-#   SYSTEMD_AUTO_ENABLE:pn-ctt-agent = "enable"
-SYSTEMD_SERVICE:${PN} = "ctt-agent-bt.service"
+SYSTEMD_SERVICE:${PN} = "ctt-agent-bt.service ctt-agent-ble.service"
 SYSTEMD_AUTO_ENABLE:${PN} ??= "disable"
-
-# =============================================================
-# Install
-# =============================================================
-# cmake installs /usr/bin/ctt-agent and /usr/bin/ctt-usb-gadget.
-do_install:append() {
-    install -d ${D}${systemd_system_unitdir}
-    install -m 0644 ${WORKDIR}/ctt-agent-bt.service ${D}${systemd_system_unitdir}/
-
-    if [ ! -x ${D}${bindir}/ctt-agent ]; then
-        bbfatal "ctt-agent was not installed: ${D}${bindir}/ctt-agent"
-    fi
-}
-
-# =============================================================
-# Packaging
-# =============================================================
-FILES:${PN} += " \
-    ${bindir}/ctt-agent \
-    ${bindir}/ctt-usb-gadget \
-    ${systemd_system_unitdir}/ctt-agent-bt.service \
-"
-# RFCOMM / i2c-dev may be built as modules.
-RRECOMMENDS:${PN} = "kernel-module-rfcomm kernel-module-i2c-dev"
+# … do_install:append (cài 2 service), FILES:${PN}, RRECOMMENDS: kernel-module-rfcomm, i2c-dev
 ```
 
-Ghi chú:
-- **Cập nhật agent:** chạy lại `scripts/export-recipe.sh`, rồi commit thư mục `files/ctt-agent/` vào git của `meta-project`. Nếu muốn package có version mới thì tăng `PR` hoặc `PV`.
-- Recipe không đụng tới daemon vendor nào. `ctt-agent` chỉ mở socket RFCOMM của kernel trên channel 22, còn bt-daemon vẫn giữ adapter và pairing như bình thường. Service chạy sau `bt-daemon.service`.
-- Recipe chỉ cần những gì đã có sẵn trong toolchain: CMake ≥ 3.16, C++17 và pthread. Không cần thư viện ngoài nào (bluez, libusb…).
+**Cập nhật agent:** chạy lại `scripts/export-recipe.sh <cùng thư mục>`, rồi commit thư mục đó vào git của `<layer>`.
 
-## 3. Biết image đang chứa bản agent nào
+**Biết image chứa bản nào:** xem `files/ctt-agent/SOURCE-COMMIT` trong layer. Trên board, `ctt-agent version` in số version.
 
-Không có `SRCREV` để ghim. Phiên bản chính là nội dung `files/ctt-agent/` đã commit trong `meta-project`. Muốn biết nó lấy từ commit nào của connectivity-tools:
+## 3. Cách B: layer `meta-ctt` (git)
 
 ```bash
-cat layers/meta-project/recipes-project/ctt-agent/files/ctt-agent/SOURCE-COMMIT
+bitbake-layers add-layer /path/to/connectivity-tools/yocto/meta-ctt
 ```
 
-Trên board, `ctt-agent version` in ra số version (`0.1.0`).
+Ghim commit để build lặp lại được (trong `local.conf` hoặc file `srcrev` của dự án):
+
+```bitbake
+SRCREV_pn-ctt-agent = "<commit đã push của connectivity-tools>"
+# repo nội bộ / mirror:
+CTT_GIT_URI = "git://git.example.com/connectivity-tools.git;protocol=ssh;branch=main"
+```
+
+Chi tiết: [yocto/meta-ctt/README.md](../yocto/meta-ctt/README.md).
 
 ## 4. Thêm vào image
 
-Không đưa tool test vào image production. Chỉ bật khi build image test, chọn một trong hai cách:
+Không đưa tool test vào image production. Chỉ bật khi build image test:
 
-**a) Chỉ máy của bạn**: sửa `build/conf/local.conf` (file sinh ra khi build):
+**Chỉ máy của bạn**, trong `<build>/conf/local.conf`:
 
 ```bitbake
 IMAGE_INSTALL:append = " ctt-agent"
-# Tự chạy server RFCOMM channel 22 khi boot (cho Client Test, không cần gõ lệnh trên UART):
+# Tự chạy server khi boot (test qua UART không cần gõ lệnh): bật cả ctt-agent-bt (RFCOMM 22)
+# và ctt-agent-ble (BLE GATT)
 SYSTEMD_AUTO_ENABLE:pn-ctt-agent = "enable"
 ```
 
-**b) Cả team dùng chung một "test image"**: sửa `project-image.bb`, cho phép bật bằng một biến:
+**Cả team dùng chung một image test**: trong `<image>.bb` (hoặc một bbappend), bật bằng biến:
 
 ```bitbake
-# ctt-agent only when CTT_TEST_IMAGE = "1" (local.conf)
 IMAGE_INSTALL:append = "${@' ctt-agent' if d.getVar('CTT_TEST_IMAGE') == '1' else ''}"
 ```
 
-Sau đó trong `local.conf` của người cần build: `CTT_TEST_IMAGE = "1"`.
+Rồi trong `local.conf`: `CTT_TEST_IMAGE = "1"`.
 
-Muốn có thêm `bluetoothctl` / `btmon` (để làm baseline `l2ping`, `btmon` trong [bt-test-plan.md](bt-test-plan.md)): kiểm tra `bluez5_%.bbappend` của `meta-project` (ở `recipes-3rdparty/bluez5/`) có cài các tool đó không. Không có thì thêm `bluez5-noinst-tools` hoặc `bluez5-client` vào `IMAGE_INSTALL` của image test.
+Nên có thêm trong image test: `bluez5` (bluetoothd, `bluetoothctl`; GATT server của agent cần bluetoothd), `bluez5-noinst-tools` (`btmon`, `l2ping`), `iw` (trạng thái WiFi trong `ctt board status`).
+
+Nếu một daemon của sản phẩm bật adapter Bluetooth, hãy cho service của agent chạy sau nó bằng một drop-in, ví dụ:
+`files/ctt-agent-bt.service.d/after.conf` với nội dung `[Unit]` / `After=<daemon>.service`.
 
 ## 5. Kiểm tra kernel
 
-Agent cần các option sau. Chúng nằm trong các fragment `.cfg` của `linux-vendor_%.bbappend`, kiểm tra ở `PROJECT_Bluetooth.cfg`:
-
 | Option | Dùng cho |
 |---|---|
-| `CONFIG_BT_RFCOMM=y` (hoặc `=m`) | Test Bluetooth RFCOMM: **bắt buộc** |
-| `CONFIG_BT_BREDR=y`, `CONFIG_BT` | L2CAP BR/EDR |
-| `CONFIG_I2C_CHARDEV` | MFi (I2C) |
-| `CONFIG_USB_CONFIGFS`, `CONFIG_USB_CONFIGFS_F_FS`, `_NCM` | Test USB gadget (đã có cho usb-daemon) |
+| `CONFIG_BT_RFCOMM` (y hoặc m) | Bluetooth Classic RFCOMM: **bắt buộc** cho test Classic |
+| `CONFIG_BT_BREDR`, `CONFIG_BT` | L2CAP BR/EDR |
+| `CONFIG_BT_LE` | BLE (GATT qua bluetoothd, L2CAP LE CoC) |
+| `CONFIG_I2C_CHARDEV` | Test I2C (ví dụ MFi coprocessor) |
+| `CONFIG_USB_CONFIGFS`, `CONFIG_USB_CONFIGFS_F_FS`, `_NCM` | Test USB gadget |
 
-Kiểm tra trên board đang chạy:
+Trên board:
 
 ```sh
-zcat /proc/config.gz | grep -E 'BT_RFCOMM|BT_BREDR|I2C_CHARDEV'
+zcat /proc/config.gz | grep -E 'BT_RFCOMM|BT_BREDR|BT_LE|I2C_CHARDEV|USB_CONFIGFS'
 ```
 
-Hoặc trong build:
-
-```bash
-bitbake -e virtual/kernel | grep ^B=
-```
-
-rồi xem file `.config` trong thư mục `B` đó.
-
-Thiếu option nào thì thêm dòng tương ứng vào `PROJECT_Bluetooth.cfg`, hoặc tạo fragment mới (ví dụ `ctt.cfg`) rồi khai báo trong `linux-vendor_%.bbappend`:
+Thiếu option thì thêm một fragment (ví dụ `ctt.cfg`) vào bbappend của kernel trong `<layer>`:
 
 ```bitbake
 SRC_URI:append = " file://ctt.cfg"
@@ -201,12 +150,10 @@ SRC_URI:append = " file://ctt.cfg"
 
 ## 6. Build và kiểm tra
 
-Dùng script build của BSP như bình thường (`build.sh`, `script/build_image.sh`). Hoặc trong môi trường build đã `source`:
-
 ```bash
 bitbake ctt-agent                               # chỉ build agent, nhanh, để sửa lỗi recipe
-oe-pkgdata-util list-pkg-files ctt-agent        # phải thấy /usr/bin/ctt-agent, ctt-usb-gadget, ctt-agent-bt.service
-bitbake project-image          # build image test
+oe-pkgdata-util list-pkg-files ctt-agent        # /usr/bin/ctt-agent, ctt-usb-gadget, 2 file .service
+bitbake <image>
 ```
 
 Không cần flash lại cả image để thử: chép thẳng binary vừa build lên board.
@@ -216,9 +163,9 @@ ls tmp/work/*/ctt-agent/*/image/usr/bin/ctt-agent
 scp tmp/work/*/ctt-agent/*/image/usr/bin/ctt-agent root@<board-ip>:/tmp/   # có mạng
 ```
 
-Không có mạng thì chép bằng USB stick, xem [bt-client-test.md](bt-client-test.md) bước 1.
+Không có mạng thì chép bằng USB stick ([bt-client-test.md](bt-client-test.md) bước 1).
 
-**Đang sửa code CTT và muốn build lại ngay mà không chép lại source** (`externalsrc`, dùng ở máy có repo). Thêm vào `build/conf/local.conf`:
+Đang sửa code CTT và muốn build lại ngay (`externalsrc`, ở máy có repo):
 
 ```bitbake
 INHERIT += "externalsrc"
@@ -226,33 +173,31 @@ EXTERNALSRC:pn-ctt-agent = "/path/to/connectivity-tools"
 EXTERNALSRC_BUILD:pn-ctt-agent = "${WORKDIR}/build"
 ```
 
-Hoặc dùng `devtool modify ctt-agent` (BSP có `script/devtool.sh`).
+Hoặc dùng `devtool modify ctt-agent`.
 
 ## 7. Kiểm tra trên board (qua UART)
 
 ```sh
-ctt-agent version                         # ctt-agent 0.1.0 (CTP v1, aarch64)
-systemctl status ctt-agent-bt             # active (running) nếu đã bật ở bước 4
-journalctl -f -u ctt-agent-bt            # trace mỗi giây trong lúc test: đã nhận / đã gửi bao nhiêu
+ctt-agent version                         # ctt-agent X.Y.Z (CTP v1, aarch64)
+systemctl status ctt-agent-bt ctt-agent-ble
+journalctl -f -u ctt-agent-bt             # trace mỗi giây trong lúc test: đã nhận / đã gửi bao nhiêu
 ```
 
-Từ PC (Client PC):
+Từ PC:
 
 ```
 ctt-agent-console.exe run --addr <địa chỉ BT của board> --channel 22 -m tx -d 10
-ctt-agent-console.exe suite --addr <địa chỉ BT của board> --channel 22 --level target
+ctt-agent-console.exe suite --addr <địa chỉ BT của board> --link ble-gatt
 ```
-
-Đã bật service thì có thể bỏ qua bước 1 và bước 6 của [bt-client-test.md](bt-client-test.md) (đưa agent lên và chạy `ctt-agent server` bằng tay).
 
 ## 8. Lỗi thường gặp
 
 | Lỗi | Nguyên nhân / cách xử lý |
 |---|---|
-| `Unable to find file file://ctt-agent` | Thiếu thư mục `files/ctt-agent/`. Chạy `scripts/export-recipe.sh`, hoặc kiểm tra thư mục đã được commit vào `meta-project` chưa |
-| `Fetcher failure … github.com` | Đang dùng recipe `git://` (cách B). Máy công ty phải dùng cách A |
-| `Nothing PROVIDES 'ctt-agent'` | Recipe không nằm trong `BBFILES` của `meta-project`. Kiểm tra `layer.conf` và đường dẫn `recipes-*/*/*.bb` |
-| `QA Issue: … installed-vs-shipped` | Có file được cài nhưng không nằm trong `FILES:${PN}`. Thêm đường dẫn vào `FILES:${PN}` |
-| CMake báo phiên bản quá thấp | Cần CMake ≥ 3.16, scarthgap đã có sẵn |
-| Trên board: `RFCOMM socket: … (kernel built without CONFIG_BT_RFCOMM?)` | Kernel thiếu `CONFIG_BT_RFCOMM` (bước 5), hoặc module `rfcomm` chưa nạp (`modprobe rfcomm`) |
-| Trên board: `rfcomm listen …/22: Address already in use (channel used by another profile/app)` | Đang có một `ctt-agent server` khác chạy (service đã bật). Dừng bằng `systemctl stop ctt-agent-bt`, hoặc dùng luôn service đó |
+| `Unable to find file file://ctt-agent` | Thiếu `files/ctt-agent/`: chạy `scripts/export-recipe.sh`, hoặc thư mục chưa được commit vào `<layer>` |
+| `Fetcher failure … ` (cách B) | Máy build không clone được repo: dùng cách A, hoặc đặt `CTT_GIT_URI` về mirror nội bộ |
+| `Nothing PROVIDES 'ctt-agent'` | Recipe không nằm trong `BBFILES` của `<layer>` (`layer.conf`, đường dẫn `recipes-*/*/*.bb`) |
+| `QA Issue: … installed-vs-shipped` | File được cài nhưng thiếu trong `FILES:${PN}` |
+| Trên board: `RFCOMM socket: … (kernel built without CONFIG_BT_RFCOMM?)` | Thiếu `CONFIG_BT_RFCOMM` (bước 5) hoặc chưa nạp module (`modprobe rfcomm`) |
+| Trên board: `rfcomm listen …/22: Address already in use …` | Đang có một `ctt-agent server` khác (service đã bật). `systemctl stop ctt-agent-bt`, hoặc dùng luôn service đó |
+| Trên board: `GATT: cannot register the CTT service with BlueZ …` | bluetoothd chưa chạy hoặc adapter chưa bật ([bt-ble.md](bt-ble.md)) |

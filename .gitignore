@@ -1,12 +1,12 @@
 build/
-recipes-project
 out/
 compile_commands.json
 __pycache__/
 *.pyc
 *.egg-info/
 .venv/
-# MFi register maps / Apple NDA material must never be committed
+# MFi register maps, board profiles of a project (configs/board.private.yaml): never committed
 *.private.yaml
+*.private.json
 dist/
 .venv-win/

@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from ctt.btapp.expectations import (DEFAULT_SUITE, SuiteRunner, all_ok, evaluate,  # noqa: E402
-                                    load_suite, summary_lines, write_report)
+                                    load_suite, outcome_line, summary_lines, write_report)
 from ctt.protocol.ctp import Result  # noqa: E402
 
 
@@ -87,6 +87,19 @@ class SuiteTest(unittest.TestCase):
         self.assertIn(("tx", 4096, 30), svc.calls)
         target = self.run_suite("target", FakeService(GOOD_WINDOWS))
         self.assertEqual([o.ok for o in target], [False, False, False, True, False, False])
+
+    def test_measure_level_records_without_limits(self):
+        slow = {**GOOD_WINDOWS, "tx": Result("tx", 990, 30, up_mbps=0.12, up_bytes=450_000, up_sent_bytes=450_000)}
+        outcomes = self.run_suite("measure", FakeService(slow))
+        self.assertEqual([o.verdict for o in outcomes], ["OK"] * 6)
+        text = "\n".join(summary_lines(outcomes))
+        self.assertIn("6/6 measured, data OK in 6", text)
+        self.assertNotIn("PASS", text)
+        self.assertIn("PC->board 0.120 Mbit/s", outcome_line(outcomes[0]))
+        bad = {**GOOD_WINDOWS, "rx": Result("rx", 990, 30, down_mbps=0.5, lost=3)}
+        self.assertIn("DATA ERR", [o.verdict for o in self.run_suite("measure", FakeService(bad))])
+        err = self.run_suite("measure", FakeService(GOOD_WINDOWS, fail_mode="echo"))
+        self.assertEqual(err[3].verdict, "ERROR")
 
     def test_connection_error_is_a_fail_not_a_crash(self):
         outcomes = self.run_suite("baseline", FakeService(GOOD_WINDOWS, fail_mode="rx"))

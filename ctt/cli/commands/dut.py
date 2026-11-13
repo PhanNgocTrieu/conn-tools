@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from ctt.cli.base import Command
-from ctt.cli.options import add_dut_args, dut_executor
+from ctt.cli.options import add_dut_args, board_profile, dut_executor
 from ctt.core.agent import DEFAULT_DUT_AGENT, REPO_ROOT
 from ctt.core.executor import SshExecutor
 
@@ -61,14 +61,12 @@ class DutInfoCommand(Command):
         add_dut_args(p)
 
     def run(self, args):
-        from ctt.firmware import vendor_daemons as fw
+        from ctt.platform import board
         dut = dut_executor(args)
         r = dut.run(["sh", "-c", DUT_INFO_SCRIPT], timeout=60)
         print(r.stdout)
-        st = fw.status(dut)
-        if fw.has_vendor_firmware(st):
-            print("\n### firmware (vendor connectivity daemons)")
-            print(fw.format_status(st))
+        print("\n### board (ctt board status)")
+        print(board.format_status(board.status(dut, board_profile(args))))
         if r.returncode != 0 and r.stderr.strip():
             print(r.stderr, file=sys.stderr)
         return r.returncode

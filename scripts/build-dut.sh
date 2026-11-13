@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cross-compile ctt-agent for the DUT (board, aarch64).
+# Cross-compile ctt-agent for the DUT (Linux aarch64 board).
 #
 #   scripts/build-dut.sh --sdk /opt/<sdk>/environment-setup-<target>   # Yocto SDK (preferred)
 #   scripts/build-dut.sh --generic [--static]                           # Ubuntu cross gcc

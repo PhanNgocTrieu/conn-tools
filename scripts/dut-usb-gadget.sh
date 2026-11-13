@@ -1,17 +1,19 @@
 #!/bin/sh
-# USB gadget for CTT on the DUT (run as root on the board, or via
+# USB gadget for CTT on the board (run as root on the board, or via
 # `ctt usb gadget up|down|status --dut root@<ip>`).
 #
-#   dut-usb-gadget.sh up [--ncm]   create configfs gadget + FunctionFS (bulk) [+ NCM network]
+#   dut-usb-gadget.sh up [--ncm] [--stop-service UNIT]... [--role-file FILE] [--keep-services]
+#                                  create configfs gadget + FunctionFS (bulk) [+ NCM network]
 #   dut-usb-gadget.sh bind         bind to the first UDC (ctt-agent can do this itself: -o udc=auto)
-#   dut-usb-gadget.sh down         unbind and remove everything
+#   dut-usb-gadget.sh down         unbind, remove everything, give the port back
 #   dut-usb-gadget.sh status
 #
-# vendor image: usb-daemon owns the dual-role dwc2 port and keeps it in
-# host mode (the head unit is host to the phone). `up` therefore stops
-# usb-daemon, switches the port to device via its role file (dwc2_drdmode,
-# taken from /etc/usb-daemon.conf) and waits for the UDC; `down` switches the
-# port back to host and restarts usb-daemon. Pass --keep-fw to refuse instead.
+# Dual-role ports: when no device controller (UDC) exists, `up` switches the port to
+# device mode through its role file (--role-file, else auto: */dwc2_drdmode or
+# /sys/class/usb_role/*/role) and waits for the UDC. If a daemon of the product owns the
+# port, name it with --stop-service (ctt passes usb.gadget_stop_services of the board
+# profile): `up` stops it, `down` switches the port back to host and restarts it.
+# --keep-services refuses instead of stopping them.
 #
 # The FunctionFS function is served by `ctt-agent server -t usb` (endpoints
 # ep1 IN / ep2 OUT), which writes the USB descriptors; the gadget can only be
@@ -25,31 +27,32 @@ VID=0x1d6b      # Linux Foundation - lab use only
 PID=0x0104      # Multifunction Composite Gadget
 
 STATE=/run/ctt-usb-gadget       # what `up` changed, undone by `down`
-FW_SVC=usb-daemon
-FW_CONF=/etc/usb-daemon.conf
+STOP_SERVICES=""                # --stop-service UNIT (repeatable)
+ROLE_FILE=""                    # --role-file FILE
 
 die() { echo "error: $*" >&2; exit 1; }
 udcs() { ls /sys/class/udc 2>/dev/null; }
 abort() { give_back_port; die "$@"; }
 
-# Role file of the CarPlay-capable port (dwc2_drdmode on the board).
+# Role file of the dual-role port: --role-file, else the first one sysfs offers.
 role_file() {
-    f=$(sed -n 's/^port\.[0-9]*\.role_path=//p' "$FW_CONF" 2>/dev/null | head -n1)
+    f="$ROLE_FILE"
     [ -n "$f" ] && [ -f "$f" ] || f=$(ls /sys/bus/platform/devices/*/dwc2_drdmode 2>/dev/null | head -n1)
     [ -n "$f" ] || f=$(ls /sys/class/usb_role/*/role 2>/dev/null | head -n1)
     echo "$f"
 }
 
-fw_active() { command -v systemctl >/dev/null 2>&1 && systemctl is-active -q "$FW_SVC"; }
+svc_active() { command -v systemctl >/dev/null 2>&1 && systemctl is-active -q "$1"; }
 
 take_port() {
     mkdir -p "$STATE"
-    if fw_active; then
-        [ "$KEEP_FW" = 1 ] && die "$FW_SVC is running and owns the USB port (drop --keep-fw to stop it)"
-        echo "stopping $FW_SVC (restarted by 'down')"
-        systemctl stop "$FW_SVC" || abort "cannot stop $FW_SVC"
-        echo "$FW_SVC" > "$STATE/stopped-service"
-    fi
+    for svc in $STOP_SERVICES; do
+        svc_active "$svc" || continue
+        [ "$KEEP" = 1 ] && die "$svc is running and owns the USB port (drop --keep-services to stop it)"
+        echo "stopping $svc (restarted by 'down')"
+        systemctl stop "$svc" || abort "cannot stop $svc"
+        echo "$svc" >> "$STATE/stopped-services"
+    done
     [ -n "$(udcs)" ] && return 0
     rf=$(role_file)
     [ -n "$rf" ] || abort "no USB device controller and no role file: port is host-only"
@@ -67,9 +70,10 @@ give_back_port() {
         rf=$(cat "$STATE/role-file")
         echo host > "$rf" 2>/dev/null && echo "$rf -> host" || echo "warning: cannot restore $rf" >&2
     fi
-    if [ -s "$STATE/stopped-service" ]; then
-        svc=$(cat "$STATE/stopped-service")
-        systemctl start "$svc" && echo "$svc restarted" || echo "warning: cannot restart $svc" >&2
+    if [ -s "$STATE/stopped-services" ]; then
+        for svc in $(cat "$STATE/stopped-services"); do
+            systemctl start "$svc" && echo "$svc restarted" || echo "warning: cannot restart $svc" >&2
+        done
     fi
     rm -rf "$STATE"
 }
@@ -89,7 +93,7 @@ up() {
     echo 0x0200 > "$G/bcdUSB"
     mkdir -p "$G/strings/0x409"
     echo "CTT" > "$G/strings/0x409/manufacturer"
-    echo "CTT board test gadget" > "$G/strings/0x409/product"
+    echo "CTT test gadget" > "$G/strings/0x409/product"
     cat /etc/machine-id 2>/dev/null | cut -c1-16 > "$G/strings/0x409/serialnumber" || echo 0001 > "$G/strings/0x409/serialnumber"
     mkdir -p "$G/configs/c.1/strings/0x409"
     echo "CTT" > "$G/configs/c.1/strings/0x409/configuration"
@@ -129,7 +133,9 @@ down() {
 status() {
     echo "UDC controllers: $(ls /sys/class/udc 2>/dev/null | tr '\n' ' ')"
     rf=$(role_file); [ -n "$rf" ] && echo "role: $rf = $(cat "$rf" 2>/dev/null)"
-    command -v systemctl >/dev/null 2>&1 && echo "$FW_SVC: $(systemctl is-active $FW_SVC 2>/dev/null)"
+    for svc in $STOP_SERVICES; do
+        command -v systemctl >/dev/null 2>&1 && echo "$svc: $(systemctl is-active "$svc" 2>/dev/null)"
+    done
     [ -d "$STATE" ] && echo "changed by ctt: $(cat "$STATE"/* 2>/dev/null | tr '\n' ' ')"
     if [ -d "$G" ]; then
         echo "gadget: $G  UDC=$(cat "$G/UDC" 2>/dev/null)"
@@ -140,14 +146,17 @@ status() {
     fi
 }
 
-KEEP_FW=0
+KEEP=0
 ACTION=${1:-status}; [ $# -gt 0 ] && shift
 NCM=""
-for a in "$@"; do
-    case "$a" in
-        --keep-fw) KEEP_FW=1 ;;
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --keep-services|--keep-fw) KEEP=1 ;;
         --ncm) NCM=--ncm ;;
+        --stop-service) shift; STOP_SERVICES="$STOP_SERVICES ${1:-}" ;;
+        --role-file) shift; ROLE_FILE="${1:-}" ;;
     esac
+    shift
 done
 
 case "$ACTION" in
@@ -155,5 +164,5 @@ case "$ACTION" in
     bind) bind ;;
     down) down ;;
     status) status ;;
-    *) sed -n '2,20p' "$0"; exit 64 ;;
+    *) sed -n '2,22p' "$0"; exit 64 ;;
 esac

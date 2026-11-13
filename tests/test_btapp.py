@@ -117,7 +117,7 @@ class PipeTest(unittest.TestCase):
 class BluezPairingTest(unittest.TestCase):
     def setUp(self):
         os.environ["CTT_BLUETOOTHCTL"] = FAKE
-        os.environ["FAKE_BT_DEVICES"] = "AA:BB:CC:DD:EE:01=board,AA:BB:CC:DD:EE:02=Phone"
+        os.environ["FAKE_BT_DEVICES"] = "AA:BB:CC:DD:EE:01=test-board,AA:BB:CC:DD:EE:02=Phone"
 
     def tearDown(self):
         os.environ.pop("CTT_BLUETOOTHCTL", None)
@@ -127,7 +127,7 @@ class BluezPairingTest(unittest.TestCase):
         be = pairing.BluezPairing()
         self.assertEqual(be.available(), (True, ""))
         devs = be.scan(0.3)
-        self.assertIn(("AA:BB:CC:DD:EE:01", "board"), [(d.address, d.name) for d in devs])
+        self.assertIn(("AA:BB:CC:DD:EE:01", "test-board"), [(d.address, d.name) for d in devs])
         pins = []
         ok, msg = be.pair("aa:bb:cc:dd:ee:01", on_pin=pins.append, timeout=10)
         self.assertTrue(ok, msg)

@@ -1,0 +1,17 @@
+[Unit]
+Description=CTT agent: BLE GATT throughput endpoint (CTT service a0c70001-...)
+Documentation=https://github.com/PhanNgocTrieu/conn-tools
+# If a daemon of your product powers the adapter, order after it with a drop-in
+# (<unit>.service.d/after.conf: [Unit] After=<that-daemon>.service).
+After=bluetooth.service
+Wants=bluetooth.service
+
+[Service]
+# For ctt-agent.exe / ctt-agent-console.exe with --link ble-gatt (Windows / Linux PC).
+# -i 1: one trace line per second (sent / received so far): journalctl -f -u ctt-agent-ble
+ExecStart=/usr/bin/ctt-agent server -t gatt -i 1 --timeout 30
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

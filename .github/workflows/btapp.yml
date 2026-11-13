@@ -9,7 +9,7 @@ on:
 
 jobs:
   agent-aarch64:
-    name: ctt-agent for the board (aarch64, static)
+    name: ctt-agent for the board (Linux aarch64, static)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -26,7 +26,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y cmake ninja-build python3-yaml python3-tk xvfb
+      # dbus + python3-dbus + python3-gi: BLE GATT test with a fake BlueZ (tests/test_ble_links.py)
+      - run: sudo apt-get update && sudo apt-get install -y cmake ninja-build python3-yaml python3-tk xvfb dbus python3-dbus python3-gi
       - run: scripts/build-host.sh
       - name: Release binary for Linux / WSL (x86_64, static, stripped)
         run: |
@@ -61,7 +62,7 @@ jobs:
           python -c "import socket; assert hasattr(socket, 'AF_BLUETOOTH') and hasattr(socket, 'BTPROTO_RFCOMM'), 'no RFCOMM sockets'; print('RFCOMM socket support OK')"
           python -c "from winrt.windows.devices.bluetooth import BluetoothDevice; from winrt.windows.devices.enumeration import DeviceInformation, DevicePairingKinds; print('selector', BluetoothDevice.get_device_selector_from_pairing_state(False)[:80]); print('pairing kinds', DevicePairingKinds.CONFIRM_ONLY | DevicePairingKinds.CONFIRM_PIN_MATCH)"
       - name: Unit tests that run on Windows
-        run: python -m unittest tests.test_btapp.BoardHelpersTest tests.test_btapp.CtpClientTest.test_pattern_crc tests.test_btapp_service.SettingsTest tests.test_btapp_service.ConsoleMenuTest tests.test_btapp_expectations tests.test_btapp_trace.FormatTest -v
+        run: python -m unittest tests.test_btapp.BoardHelpersTest tests.test_btapp.CtpClientTest.test_pattern_crc tests.test_btapp_service.SettingsTest tests.test_btapp_service.ConsoleMenuTest tests.test_btapp_expectations tests.test_btapp_trace.FormatTest tests.test_ble_links.CapabilityTest -v
       - name: GUI smoke test (window + screenshot)
         env:
           CTT_BT_SMOKE: smoke.png
@@ -80,7 +81,12 @@ jobs:
           # menu: piped output must be UTF-8 English text, then exit with 0
           $menu = "0" | dist\ctt-agent-console.exe
           $menu | Out-String | Write-Host
-          if (-not ($menu -match "Test suite with Mbit/s expectations")) { throw "console menu not shown" }
+          if (-not ($menu -match "Test suite")) { throw "console menu not shown" }
+          # links: Windows runs RFCOMM and BLE GATT, BLE CoC is reported as not available
+          $caps = dist\ctt-agent-console.exe caps | Out-String
+          Write-Host $caps
+          if (-not ($caps -match "ble-gatt\s+yes")) { throw "BLE GATT (bleak) not available in the exe" }
+          if (-not ($caps -match "ble-coc\s+no")) { throw "BLE CoC should be reported as not available on Windows" }
       - name: Exe smoke test
         shell: pwsh
         run: |
@@ -102,7 +108,7 @@ jobs:
 
   # Deploy: every push to main refreshes the "latest-main" pre-release; a v* tag makes a release.
   # Assets (names must differ, so the Linux binaries carry the CPU in the name):
-  #   ctt-agent-aarch64      board agent (board, static)
+  #   ctt-agent-aarch64      board agent (Linux aarch64, static)
   #   ctt-agent-x86_64       Linux / WSL agent (static)
   #   ctt-agent.exe          Windows desktop app (GUI)
   #   ctt-agent-console.exe  Windows console app (menu + sub-commands, works over SSH)
@@ -152,7 +158,7 @@ jobs:
           cat > notes.md <<EOF
           | File | Runs on |
           |---|---|
-          | \`ctt-agent-aarch64\` | board board (copy to \`/tmp/ctt-agent\`, \`chmod +x\`) |
+          | \`ctt-agent-aarch64\` | board, Linux aarch64 (copy to \`/tmp/ctt-agent\`, \`chmod +x\`) |
           | \`ctt-agent-x86_64\` | Linux / WSL x86_64 |
           | \`ctt-agent.exe\` | Windows, desktop app |
           | \`ctt-agent-console.exe\` | Windows, console (also over SSH) |

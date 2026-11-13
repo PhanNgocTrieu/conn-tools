@@ -1,7 +1,7 @@
 # Connectivity Test Tool (CTT) — Kế hoạch triển khai
 
 > Phiên bản: v0.4 · 2026-11-10 — Phase 0–7 (Yocto) đã code xong; macOS host chưa làm (xem mục 5)
-> Phạm vi: test USB / WiFi / Bluetooth / MFi trên DUT **Vendor board chạy Linux build bằng Yocto**.
+> Phạm vi: test USB / WiFi / Bluetooth / MFi trên DUT là **board Linux** (Yocto hoặc bản phân phối khác).
 > Host: Windows → **WSL2 (Ubuntu 24.04)**, sau này là Linux native và macOS. Giao diện: **CLI**.
 
 ---
@@ -18,7 +18,7 @@
 | Đóng gói trên DUT | Layer Yocto `meta-ctt` (recipe `ctt-agent`, thêm `iperf3`, `bluez5-tools`, `i2c-tools`) | Cài vào image chuẩn, tái lập được. |
 
 ```
- ┌──────────────── HOST (WSL2) ────────────────┐            ┌──────────── DUT board (Yocto) ───────────┐
+ ┌──────────────── HOST (WSL2) ────────────────┐            ┌──────────── DUT (Linux board) ───────────┐
  │ ctt (Python CLI)                            │  SSH       │ ctt-agent (C++, aarch64)                    │
  │  ├─ deploy / start / stop agent ────────────┼───────────▶│  ├─ transports: tcp, udp, rfcomm, l2cap,    │
  │  ├─ profiles YAML, test matrix              │ (Ethernet/ │  │   usb (gadget/host), i2c (MFi CP)        │
@@ -136,6 +136,6 @@ ctt run mfi-cp --dut 192.168.1.50 --bus 2 --iterations 1000
 1. **Truy cập DUT:** DUT có Ethernet/WiFi để SSH vào không, hay chỉ có UART debug? Nếu chỉ có UART thì control plane cần một backend serial (pyserial).
 2. **Yocto SDK:** đã có SDK (`populate_sdk`) cho board chưa? Trong image có `libbluetooth`/`bluez5` không?
 3. **Stack BT trên DUT:** kernel BlueZ (`AF_BLUETOOTH`) cho tất cả, hay có stack userspace riêng cho profile của xe (HFP/A2DP)? Channel RFCOMM nào đang bị profile khác chiếm?
-4. **USB:** port USB của DUT ở vai trò host, device (OTG), hay cả hai? Mục tiêu là test gì (CarPlay/AA, mass storage, kết nối PC)?
+4. **USB:** port USB của DUT ở vai trò host, device (OTG), hay cả hai? Mục tiêu là test gì (thiết bị ngoài, mass storage, kết nối PC)?
 5. **MFi:** chip Auth CP phiên bản nào (2.0C / 3.0)? Nằm trên bus I2C số mấy, địa chỉ bao nhiêu?
 6. **Chỉ tiêu pass/fail:** throughput tối thiểu của từng interface (ví dụ RFCOMM ≥ 1.5 Mbps)?

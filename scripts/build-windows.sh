@@ -46,7 +46,7 @@ echo "== copy sources -> $WORK_WIN"
 mkdir -p "$WORK"
 rsync -a --delete \
     --exclude .git --exclude build --exclude out --exclude dist --exclude .venv-win \
-    --exclude recipes-project --exclude '__pycache__' --exclude '*.private.yaml' \
+    $( [ -f "$ROOT/.git/info/exclude" ] && echo "--exclude-from=$ROOT/.git/info/exclude" ) --exclude '__pycache__' --exclude '*.private.yaml' \
     "$ROOT/" "$WORK/"
 
 ARGS=(-Only "$ONLY")

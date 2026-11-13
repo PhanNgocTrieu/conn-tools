@@ -1,6 +1,6 @@
 # CTT: Connectivity Test Tool
 
-Bộ công cụ đo **throughput, latency và độ toàn vẹn dữ liệu** của Bluetooth, WiFi, USB và MFi trên board **Vendor board** (Linux Yocto).
+Bộ công cụ đo **throughput, latency và độ toàn vẹn dữ liệu** của Bluetooth, WiFi, USB và MFi trên **board Linux** (Yocto, Buildroot, Debian…; aarch64 hoặc x86_64), với PC Windows hoặc Linux.
 
 ## Thành phần
 
@@ -11,15 +11,26 @@ Bộ công cụ đo **throughput, latency và độ toàn vẹn dữ liệu** c�
 | `ctt-agent` | Board (aarch64) và PC Linux | Đầu đo (C++), dùng giao thức chung [CTP](docs/ctp-spec.md). Trên release có tên `ctt-agent-aarch64` (board) và `ctt-agent-x86_64` (Linux / WSL) |
 | `ctt` | WSL / Linux | CLI test mọi giao tiếp (WiFi, BT, USB, MFi), xuất report HTML/JUnit |
 
+## Chạy trên board nào?
+
+Mọi board Linux có ngăn xếp chuẩn: systemd, BlueZ (bluetoothd), USB gadget qua configfs, WiFi nl80211. Agent trên board là một file static (`ctt-agent-aarch64`, hoặc tự build cho kiến trúc khác) và không cần thư viện nào.
+
+Phần riêng của từng board/sản phẩm khai báo trong một **board profile** (YAML), không nằm trong code. Ví dụ: daemon Bluetooth/USB/WiFi riêng, cách board chấp nhận pairing, giới hạn số bond, lệnh trạng thái riêng.
+- Mẫu: [configs/board.example.yaml](configs/board.example.yaml).
+- Bản của dự án đặt ở `configs/board.private.yaml`, file này đã được gitignore. Có thể chỉ định file khác bằng `--board-profile FILE` hoặc biến `CTT_BOARD_PROFILE`.
+- Không có profile thì CTT dùng BlueZ mặc định.
+- Xem profile đang dùng: `python3 -m ctt board status --dut root@<board-ip>`.
+
 ## Bắt đầu từ đâu?
 
 | Bạn muốn… | Đọc |
 |---|---|
 | Test Bluetooth PC ↔ board bằng app (GUI hoặc console) | [docs/bt-app.md](docs/bt-app.md) |
+| Test **BLE** (GATT trên Windows / Linux, L2CAP CoC trên Linux) | [docs/bt-ble.md](docs/bt-ble.md) |
 | Biết nên test Bluetooth theo cách nào với setup hiện tại | [docs/bt-test-plan.md](docs/bt-test-plan.md) |
 | Chạy từng test case Bluetooth, từ kết nối đến gửi dữ liệu | [docs/bt-test-cases.md](docs/bt-test-cases.md) |
 | Test Bluetooth trên **board khách hàng** (chỉ có UART), từng bước | [docs/bt-client-test.md](docs/bt-client-test.md) |
-| Đưa `ctt-agent` vào image Yocto của dự án (recipe trong `meta-project`) | [docs/yocto-recipe.md](docs/yocto-recipe.md) |
+| Đưa `ctt-agent` vào image Yocto của board | [docs/yocto-recipe.md](docs/yocto-recipe.md) |
 | Tải bản build sẵn, tạo release `vX.Y.Z` | [docs/release.md](docs/release.md) |
 | Test WiFi / USB / MFi bằng CLI `ctt` | [docs/TESTING.md](docs/TESTING.md) |
 | Cài môi trường WSL | [docs/wsl-setup.md](docs/wsl-setup.md) |
@@ -137,10 +148,10 @@ Chi tiết từng mục menu: [docs/bt-app.md](docs/bt-app.md#console).
 ```bash
 export CTT_DUT=root@<board-ip>
 python3 -m ctt deploy                         # copy agent lên board
-python3 -m ctt dut-info                       # kiểm kê phần cứng + daemon vendor trên board
+python3 -m ctt dut-info                       # kiểm kê phần cứng + trạng thái board
 python3 -m ctt run -t tcp -m bidir -d 30s     # một test
 python3 -m ctt profile profiles/wifi_tcp_throughput.yaml
-python3 -m ctt fw status                      # usb-daemon / bt-daemon / wifi-daemon
+python3 -m ctt board status                   # service trong board profile, BlueZ, USB role, WiFi
 ```
 
 | `-t` | Giao tiếp | `-m` | Hướng (server chạy trên board) |
@@ -160,7 +171,7 @@ ctt/                    Python
   core/                 executor (local/SSH), chạy agent, đơn vị
   protocol/ctp.py       client CTP thuần Python (dùng cho app Windows)
   bluetooth/            bluetoothctl, pairing (WinRT/BlueZ), điều khiển board qua SSH
-  firmware/             daemon vendor trên board (usb/bt/wifi-daemon)
+  platform/             board profile: phần riêng của từng board (configs/board.example.yaml)
   interfaces/           wifi, usb, mfi
   testing/              runner, profile YAML
   reporting/            ghi kết quả, in console, HTML/JUnit, so sánh baseline

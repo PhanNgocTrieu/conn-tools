@@ -69,11 +69,11 @@ class TerminalTab(ttk.Frame):
         self._toolbar().grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
         self.pc = TerminalPane(self, "PC", "Send PC → board", self.on_pc_send)
         self.pc.grid(row=1, column=0, sticky="nsew", padx=(0, 6))
-        self.bd = TerminalPane(self, "Board board (over SSH)", "Board sends → PC", self.on_board_send)
+        self.bd = TerminalPane(self, "Board (over SSH)", "Board sends → PC", self.on_board_send)
         self.bd.grid(row=1, column=1, sticky="nsew", padx=(6, 0))
         ttk.Label(self, text="With SSH the board runs `ctt-agent pipe`: you see what the board receives and can type what "
                              "the board sends. Without SSH the PC connects to the channel entered on the Connect tab "
-                             "(any RFCOMM server on the board) and only the PC pane is used.",
+                             "(on the board: ctt-agent pipe --text with the same link) and only the PC pane is used.",
                   style="Cap.TLabel", wraplength=1000).grid(row=3, column=0, columnspan=2, sticky="w",
                                                             pady=(6, 0))
 
@@ -125,8 +125,9 @@ class TerminalTab(ttk.Frame):
         self.bd.totals.clear()
         t = session.target
         self.btn.configure(text="Disconnect", state="normal")
-        self.info.configure(text=f"Connected {t.address} channel {t.channel}")
-        self.pc.meta(f"— connected to {t.address} / channel {t.channel}")
+        self.info.configure(text=f"Connected {t.describe()}")
+        self.pc.meta(f"— connected to {t.address} / channel {t.channel}" if t.link == "rfcomm"
+                     else f"— connected to {t.describe()}")
         if not session.has_board_side:
             self.bd.meta("— (no SSH: the board side is not visible)")
         self.ctx.set_status("Terminal connected")

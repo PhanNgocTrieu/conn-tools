@@ -8,6 +8,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from ctt.bluetooth.board import SERVICE_CHANNEL, bundled_agent
 from ctt.btapp.gui.context import AppContext
+from ctt.protocol.links import LINK_LABELS, LINKS, ble_scan, capabilities
 
 
 class ConnectTab(ttk.Frame):
@@ -22,6 +23,8 @@ class ConnectTab(ttk.Frame):
         self.v_accept = tk.BooleanVar(value=True)
         self.v_addr = tk.StringVar(value=s.bt_addr)
         self.v_chan = tk.StringVar(value=s.channel)
+        self.caps = {c.link: c for c in capabilities()}
+        self.v_link = tk.StringVar(value=s.link if s.link in LINKS and self.caps[s.link].ok else "rfcomm")
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=1)
         self._board_frame().grid(row=0, column=0, sticky="ew")
@@ -33,11 +36,12 @@ class ConnectTab(ttk.Frame):
         settings.no_ssh = self.v_nossh.get()
         settings.bt_addr = self.v_addr.get().strip()
         settings.channel = self.v_chan.get().strip()
+        settings.link = self.v_link.get()
 
     # ---- layout ------------------------------------------------------------------------
 
     def _board_frame(self):
-        bf = ttk.LabelFrame(self, text="Board board (SSH, used to run the agent on the board)", padding=10)
+        bf = ttk.LabelFrame(self, text="Board (SSH, used to run the agent on the board)", padding=10)
         ttk.Label(bf, text="SSH").grid(row=0, column=0, sticky="w")
         ttk.Entry(bf, textvariable=self.v_board, width=30).grid(row=0, column=1, sticky="w", padx=6)
         ttk.Button(bf, text="Check board", command=self.on_check).grid(row=0, column=2, padx=3)
@@ -73,13 +77,35 @@ class ConnectTab(ttk.Frame):
 
     def _target_frame(self):
         tf = ttk.LabelFrame(self, text="Target", padding=10)
+        ttk.Label(tf, text="Link").grid(row=1, column=0, sticky="w", pady=(8, 0))
+        lf = ttk.Frame(tf)
+        lf.grid(row=1, column=1, columnspan=4, sticky="w", pady=(8, 0))
+        for link in LINKS:   # each PC offers what it supports; the others are greyed out with the reason
+            cap = self.caps[link]
+            rb = ttk.Radiobutton(lf, text=LINK_LABELS[link], value=link, variable=self.v_link,
+                                 command=self._on_link)
+            rb.pack(side="left", padx=(0, 12))
+            if not cap.ok:
+                rb.state(["disabled"])
+        self.link_info = ttk.Label(tf, text="", style="Cap.TLabel", wraplength=900)
+        self.link_info.grid(row=2, column=0, columnspan=5, sticky="w")
         ttk.Label(tf, text="Board BT address").grid(row=0, column=0, sticky="w")
         ttk.Entry(tf, textvariable=self.v_addr, width=22).grid(row=0, column=1, padx=6, sticky="w")
         ttk.Label(tf, text="RFCOMM channel").grid(row=0, column=2, sticky="w", padx=(12, 0))
         ttk.Entry(tf, textvariable=self.v_chan, width=8).grid(row=0, column=3, padx=6, sticky="w")
         ttk.Label(tf, text="auto = ask the agent on the board over SSH", style="Cap.TLabel").grid(
             row=0, column=4, sticky="w")
+        self._on_link()
         return tf
+
+    def _on_link(self):
+        link = self.v_link.get()
+        missing = [f"{LINK_LABELS[c.link]}: {c.why}" for c in self.caps.values() if not c.ok]
+        board = {"rfcomm": "RFCOMM channel (no SSH: 22)", "ble-gatt": "ctt-agent server -t gatt",
+                 "ble-coc": "ctt-agent server -t l2cap -o type=le"}[link]
+        self.link_info.configure(text=f"Board (no SSH, on the UART): {board}."
+                                 + (f"   Not on this PC: {'; '.join(missing)}" if missing else ""))
+        self.ctx.settings.link = link
 
     # ---- actions -------------------------------------------------------------------------
 
@@ -98,10 +124,11 @@ class ConnectTab(ttk.Frame):
             svc = fw.get("services", {})
             parts = [f"{info['hostname'] or '?'} ({info['arch']})",
                      f"agent: {info['agent'] or 'MISSING → press Deploy agent'}",
-                     f"BT: {info.get('bt_address') or '?'}",
-                     f"bt-daemon: {svc.get('bt-daemon', '-')}"]
+                     f"BT: {info.get('bt_address') or '?'}"]
+            parts += [f"{name}: {state}" for name, state in svc.items()]
             if isinstance(fw.get("bt", {}).get("paired"), int):
-                parts.append(f"bond: {fw['bt']['paired']}/5")
+                parts.append(f"bonds: {fw['bt']['paired']}")
+            parts.append(f"profile: {info.get('profile', '-')}")
             self.board_info.configure(text="   ·   ".join(parts))
             self.v_addr.set(self.ctx.settings.bt_addr)
             self.ctx.log("Board OK: " + " · ".join(parts), "ok")
@@ -122,9 +149,19 @@ class ConnectTab(ttk.Frame):
             lambda v: (self.ctx.log(f"Deploy OK: {v}", "ok"), self.ctx.set_status("Deploy OK")))
 
     def on_scan(self):
-        self.ctx.set_status("Scanning Bluetooth (about 10–15 s)…")
         self.devtree.delete(*self.devtree.get_children())
+        if self.v_link.get() != "rfcomm":
+            self.ctx.set_status("BLE scan (8 s): boards advertising the CTT service…")
+            self.ctx.dispatcher.background(lambda: ble_scan(8, only_ctt=True), self._show_ble)
+            return
+        self.ctx.set_status("Scanning Bluetooth (about 10–15 s)…")
         self.ctx.dispatcher.background(lambda: self.ctx.service.scan(10), self._show_devices)
+
+    def _show_ble(self, devs):
+        for addr, name, rssi in devs:
+            self.devtree.insert("", "end", values=(f"{name or '(no name)'}  [BLE {rssi} dBm]", addr, ""))
+        self.ctx.set_status(f"{len(devs)} BLE devices with the CTT service")
+        self.ctx.log(f"BLE scan: {len(devs)} boards running ctt-agent server -t gatt")
 
     def on_paired(self):
         self.ctx.dispatcher.background(self.ctx.service.paired, self._show_devices)

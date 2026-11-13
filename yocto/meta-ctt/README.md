@@ -1,6 +1,6 @@
 # meta-ctt
 
-Yocto layer that puts `ctt-agent` (and the tools `ctt` uses) into the board image.
+Yocto layer that puts `ctt-agent` (and the tools `ctt` uses) into your board's image.
 
 ```bash
 # in the BSP build directory

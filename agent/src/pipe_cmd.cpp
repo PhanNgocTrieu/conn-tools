@@ -14,7 +14,10 @@
 //
 // Usage: ctt-agent pipe [-t rfcomm] [-e /CHANNEL] [-o KEY=VALUE] [--connect EP]
 //                       [--accept-timeout SEC]
+#include <unistd.h>
+
 #include <cctype>
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -35,10 +38,17 @@ namespace ctt {
 namespace {
 
 std::mutex g_out;
-bool g_text = false;  // --text: human-readable lines for a person on the UART
+bool g_text = false;    // --text: human-readable lines for a person on the UART
+bool g_binary = false;  // --binary: raw bytes on stdin/stdout, events as JSON on stderr
 
 void emit(const Json& j, const std::string& text = "") {
     std::lock_guard<std::mutex> lk(g_out);
+    if (g_binary) {
+        std::fputs(j.str().c_str(), stderr);
+        std::fputc('\n', stderr);
+        std::fflush(stderr);
+        return;
+    }
     if (g_text) {
         if (text.empty()) return;
         std::fputs(text.c_str(), stdout);
@@ -111,8 +121,21 @@ void usage(FILE* f) {
         "Default: -t rfcomm, listen on a kernel-assigned channel.\n"
         "--text: for a person on the console. A typed line is sent as text + \"\\n\";\n"
         "        \"/hex 00 ff 0d\" sends raw bytes. Received data is printed as text and hex,\n"
-        "        with running totals of bytes received / sent.\n",
+        "        with running totals of bytes received / sent.\n"
+        "--binary: raw bytes: stdin -> link, link -> stdout; events as JSON lines on stderr\n"
+        "        (used by the PC app for links Python cannot open, e.g. BLE L2CAP CoC).\n",
         f);
+}
+
+bool write_fd_all(int fd, const uint8_t* p, size_t n) {
+    while (n) {
+        ssize_t w = ::write(fd, p, n);
+        if (w < 0 && errno == EINTR) continue;
+        if (w <= 0) return false;
+        p += w;
+        n -= size_t(w);
+    }
+    return true;
 }
 
 void closed(const std::string& reason) {
@@ -139,6 +162,7 @@ int run_pipe_command(int argc, char** argv) {
         else if (a == "--connect") connect_ep = val("--connect");
         else if (a == "--accept-timeout") accept_timeout = std::atof(val("--accept-timeout").c_str());
         else if (a == "--text") g_text = true;
+        else if (a == "--binary") g_binary = true;
         else if (a == "-o" || a == "--opt") {
             std::string kv = val("-o");
             auto eq = kv.find('=');
@@ -186,6 +210,10 @@ int run_pipe_command(int argc, char** argv) {
                 for (;;) {
                     ssize_t n = sp->read_some(buf, sizeof(buf));
                     if (n <= 0) break;
+                    if (g_binary) {
+                        if (!write_fd_all(1, buf, size_t(n))) break;
+                        continue;
+                    }
                     total += uint64_t(n);
                     const double t = double(now_ns() - t0) / 1e9;
                     Json j;
@@ -208,6 +236,20 @@ int run_pipe_command(int argc, char** argv) {
             std::_Exit(0);  // the link is gone: stop waiting on stdin too
         });
         reader.detach();
+
+        if (g_binary) {
+            uint8_t in[4096];
+            for (;;) {
+                ssize_t n = ::read(0, in, sizeof(in));
+                if (n < 0 && errno == EINTR) continue;
+                if (n <= 0) break;
+                struct iovec iov = {in, size_t(n)};
+                write_all(*sp, &iov, 1);
+            }
+            s->shutdown_write();
+            closed("stdin closed");
+            return 0;
+        }
 
         std::string line;
         std::vector<uint8_t> data;

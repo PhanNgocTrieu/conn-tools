@@ -6,3 +6,8 @@ winrt-Windows.Devices.Bluetooth>=2.0; sys_platform == "win32"
 winrt-Windows.Devices.Enumeration>=2.0; sys_platform == "win32"
 winrt-Windows.Foundation>=2.0; sys_platform == "win32"
 winrt-Windows.Foundation.Collections>=2.0; sys_platform == "win32"
+# BLE GATT link (Windows WinRT / Linux BlueZ / macOS). Without it the app still runs; ble-gatt is
+# reported as not available (ctt-agent-console caps).
+bleak>=0.22
+# board profile files (configs/board*.yaml, ctt/platform/board.py)
+pyyaml>=6.0

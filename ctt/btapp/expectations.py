@@ -22,7 +22,9 @@ from typing import Callable
 
 from ctt.protocol.ctp import Interval, Result
 
-LEVELS = ("baseline", "target")
+LEVELS = ("measure", "baseline", "target")
+# measure:  no Mbit/s / RTT limits, only record the numbers (data integrity is still reported)
+MEASURE = "measure"
 
 # key -> (label, unit, comparison)
 EXPECT_KEYS = {
@@ -140,9 +142,31 @@ DEFAULT_SUITE = Suite(
     ])
 
 
-def load_suite(path: str | Path | None) -> Suite:
+# BLE: one suite for both BLE links (GATT and L2CAP CoC). No product limits yet: measure first,
+# then put numbers in baseline / target (suite --dump / --file) once real values are known.
+BLE_SUITE = Suite(
+    name="bt-ble-throughput",
+    notes=("BLE GATT (write without response / notify) or L2CAP CoC, chosen by the link setting. "
+           "Block 244 = one LE data packet with data length extension (251 - 4 L2CAP - 3 ATT). "
+           "No Mbit/s limits yet: run level measure. Integrity is always reported."),
+    cases=[
+        _case("BLE-TP-01", "PC -> board, BLE, block 244", "tx", 244, 30, {}, {}),
+        _case("BLE-TP-02", "board -> PC, BLE, block 244", "rx", 244, 30, {}, {}),
+        _case("BLE-TP-03", "both ways at once, BLE, block 244", "bidir", 244, 30, {}, {}),
+        _case("BLE-TP-04", "latency (echo), BLE, block 20", "echo", 20, 10, {}, {}),
+        _case("BLE-TP-05", "PC -> board, BLE, block 990", "tx", 990, 30, {}, {}),
+        _case("BLE-TP-06", "board -> PC, BLE, block 990", "rx", 990, 30, {}, {}),
+    ])
+
+
+def suite_for(link: str) -> Suite:
+    """Built-in suite of a link: RFCOMM -> BT-TP-01..06, BLE (GATT / CoC) -> BLE-TP-01..06."""
+    return DEFAULT_SUITE if link == "rfcomm" else BLE_SUITE
+
+
+def load_suite(path: str | Path | None, link: str = "rfcomm") -> Suite:
     if not path:
-        return DEFAULT_SUITE
+        return suite_for(link)
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     cases = [SuiteCase(**c) for c in data["cases"]]
     for c in cases:
@@ -158,17 +182,55 @@ class CaseOutcome:
     result: Result | None
     checks: list[Check]
     error: str = ""
+    spread: dict = field(default_factory=dict)   # min / max of the per-second rates and RTTs
 
     @property
     def ok(self) -> bool:
         return not self.error and all_ok(self.checks)
 
+    @property
+    def verdict(self) -> str:
+        """PASS / FAIL against a level; with level "measure": OK, DATA ERR (lost / CRC / order) or ERROR."""
+        if self.level != MEASURE:
+            return "PASS" if self.ok else "FAIL"
+        if self.error:
+            return "ERROR"
+        return "OK" if self.ok else "DATA ERR"
+
     def to_dict(self) -> dict:
         return {"id": self.case.id, "title": self.case.title, "mode": self.case.mode,
                 "block": self.case.block, "duration_s": self.case.duration_s, "level": self.level,
-                "verdict": "PASS" if self.ok else "FAIL", "error": self.error,
-                "checks": [asdict(c) for c in self.checks],
+                "verdict": self.verdict, "error": self.error,
+                "checks": [asdict(c) for c in self.checks], "spread": self.spread,
                 "result": self.result.to_dict() if self.result else None}
+
+
+def _spread(intervals: list[Interval]) -> dict:
+    """min / max over the per-second lines (the first second is skipped: it only fills buffers)."""
+    out = {}
+    body = intervals[1:] if len(intervals) > 2 else intervals
+    for key in ("up_mbps", "down_mbps", "rtt_ms"):
+        vals = [getattr(iv, key) for iv in body if getattr(iv, key) is not None]
+        if vals:
+            out[key] = {"min": round(min(vals), 3), "max": round(max(vals), 3)}
+    return out
+
+
+def outcome_line(o: CaseOutcome) -> str:
+    """One line after each case: the measured numbers (and why it failed, if a level is used)."""
+    if o.error:
+        return f"  -> {o.verdict}  {o.error}"
+    r = o.result
+    parts = []
+    if r.up_mbps is not None:
+        parts.append(f"PC->board {r.up_mbps:.3f} Mbit/s")
+    if r.down_mbps is not None:
+        parts.append(f"board->PC {r.down_mbps:.3f} Mbit/s")
+    if r.rtt_ms:
+        parts.append(f"RTT avg {r.rtt_ms['avg']:.1f} / p99 {r.rtt_ms['p99']:.1f} ms")
+    parts.append(f"lost {r.lost} crc {r.crc_errors}")
+    failed = "; ".join(c.text() for c in o.checks if not c.ok)
+    return f"  -> {o.verdict}  " + "  ".join(parts) + (f"   [{failed}]" if failed else "")
 
 
 class SuiteRunner:
@@ -193,6 +255,13 @@ class SuiteRunner:
         if level not in LEVELS:
             raise ValueError(f"level must be one of {', '.join(LEVELS)}")
         outcomes = []
+        seen: list[Interval] = []
+
+        def record(iv: Interval) -> None:
+            seen.append(iv)
+            if on_interval:
+                on_interval(iv)
+
         for i, case in enumerate(cases, 1):
             if self._stopped:
                 break
@@ -201,9 +270,10 @@ class SuiteRunner:
             params = ThroughputParams(case.mode, case.duration_s, case.block, 0, True)
             try:
                 extra = {"on_board_event": on_board_event} if on_board_event else {}
-                r = self.service.run_throughput(params, on_interval=on_interval, auto_deploy=auto_deploy,
+                seen.clear()
+                r = self.service.run_throughput(params, on_interval=record, auto_deploy=auto_deploy,
                                                 **extra)
-                out = CaseOutcome(case, level, r, evaluate(r, case.expect_for(level)))
+                out = CaseOutcome(case, level, r, evaluate(r, case.expect_for(level)), spread=_spread(seen))
             except (RuntimeError, OSError) as e:
                 out = CaseOutcome(case, level, None, [], str(e))
             outcomes.append(out)
@@ -214,19 +284,40 @@ class SuiteRunner:
         return outcomes
 
 
+def _rng(o: CaseOutcome, key: str, digits: int = 3) -> str:
+    v = o.spread.get(key)
+    return "-" if not v else f"{v['min']:.{digits}f}-{v['max']:.{digits}f}"
+
+
 def summary_lines(outcomes: list[CaseOutcome]) -> list[str]:
-    lines = [f"{'case':<9} {'mode':<6} {'block':>5}  {'PC->board':>9}  {'board->PC':>9}  "
-             f"{'RTT p99':>8}  verdict  failed checks"]
+    """Table of the measured numbers. avg = whole run; min-max = range of the per-second lines."""
+    measure = bool(outcomes) and outcomes[0].level == MEASURE
+    lines = [f"{'case':<9} {'mode':<5} {'block':>5}  {'PC->board':>9} {'min-max':>11}  "
+             f"{'board->PC':>9} {'min-max':>11}  {'RTT avg':>7} {'p99':>6}  {'lost':>4} {'crc':>3}  "
+             f"{'result':<8} notes",
+             f"{'':<9} {'':<5} {'byte':>5}  {'Mbit/s':>9} {'Mbit/s':>11}  {'Mbit/s':>9} {'Mbit/s':>11}  "
+             f"{'ms':>7} {'ms':>6}"]
     for o in outcomes:
         r = o.result
         up = "-" if not r or r.up_mbps is None else f"{r.up_mbps:.3f}"
         down = "-" if not r or r.down_mbps is None else f"{r.down_mbps:.3f}"
+        avg = "-" if not r or not r.rtt_ms else f"{r.rtt_ms['avg']:.1f}"
         p99 = "-" if not r or not r.rtt_ms else f"{r.rtt_ms['p99']:.1f}"
+        lost = "-" if not r else str(r.lost)
+        crc = "-" if not r else str(r.crc_errors)
         why = o.error or "; ".join(c.text() for c in o.checks if not c.ok)
-        lines.append(f"{o.case.id:<9} {o.case.mode:<6} {o.case.block:>5}  {up:>9}  {down:>9}  "
-                     f"{p99:>8}  {'PASS' if o.ok else 'FAIL':<7}  {why}".rstrip())
+        lines.append(f"{o.case.id:<9} {o.case.mode:<5} {o.case.block:>5}  {up:>9} {_rng(o, 'up_mbps'):>11}  "
+                     f"{down:>9} {_rng(o, 'down_mbps'):>11}  {avg:>7} {p99:>6}  {lost:>4} {crc:>3}  "
+                     f"{o.verdict:<8} {why}".rstrip())
     n_ok = sum(o.ok for o in outcomes)
-    lines.append(f"{n_ok}/{len(outcomes)} PASS" + ("" if outcomes else " (nothing run)"))
+    if not outcomes:
+        lines.append("0 cases (nothing run)")
+    elif measure:
+        n_err = sum(bool(o.error) for o in outcomes)
+        lines.append(f"{len(outcomes) - n_err}/{len(outcomes)} measured, data OK in {n_ok}"
+                     " (level measure: no Mbit/s limits)")
+    else:
+        lines.append(f"{n_ok}/{len(outcomes)} PASS (level {outcomes[0].level})")
     return lines
 
 
@@ -238,17 +329,23 @@ def write_report(outcomes: list[CaseOutcome], suite: Suite, level: str, out_dir:
     stem = out_dir / time.strftime(f"suite-{level}-%Y%m%d-%H%M%S")
     data = {"suite": suite.name, "level": level, "time": time.strftime("%Y-%m-%d %H:%M:%S"),
             "passed": sum(o.ok for o in outcomes), "total": len(outcomes),
+            "errors": sum(bool(o.error) for o in outcomes),
             "cases": [o.to_dict() for o in outcomes]}
     stem.with_suffix(".json").write_text(json.dumps(data, indent=2), encoding="utf-8")
     with open(stem.with_suffix(".csv"), "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(["id", "title", "mode", "block", "duration_s", "level", "up_mbps", "down_mbps",
-                    "rtt_p99_ms", "lost", "crc_errors", "verdict", "failed_checks"])
+                    "up_min_mbps", "up_max_mbps", "down_min_mbps", "down_max_mbps",
+                    "rtt_avg_ms", "rtt_p99_ms", "up_sent_bytes", "up_bytes", "down_bytes",
+                    "lost", "crc_errors", "verdict", "failed_checks"])
         for o in outcomes:
             r = o.result
             w.writerow([o.case.id, o.case.title, o.case.mode, o.case.block, o.case.duration_s, level,
                         r.up_mbps if r else "", r.down_mbps if r else "",
-                        r.rtt_ms.get("p99") if r and r.rtt_ms else "", r.lost if r else "",
-                        r.crc_errors if r else "", "PASS" if o.ok else "FAIL",
+                        *[o.spread.get(k, {}).get(m, "") for k in ("up_mbps", "down_mbps") for m in ("min", "max")],
+                        r.rtt_ms.get("avg") if r and r.rtt_ms else "",
+                        r.rtt_ms.get("p99") if r and r.rtt_ms else "",
+                        r.up_sent_bytes if r else "", r.up_bytes if r else "", r.down_bytes if r else "",
+                        r.lost if r else "", r.crc_errors if r else "", o.verdict,
                         o.error or "; ".join(c.text() for c in o.checks if not c.ok)])
     return stem.with_suffix(".json")

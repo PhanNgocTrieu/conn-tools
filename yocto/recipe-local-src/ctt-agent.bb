@@ -9,15 +9,16 @@ LICENSE = "CLOSED"
 # =============================================================
 # Source
 # =============================================================
-# Source kept in this layer next to the recipe (files/ctt-agent/), like bt-daemon:
-# no git fetch, no network, no SRCREV. The source commit is in files/ctt-agent/SOURCE-COMMIT.
+# Source kept in this layer next to the recipe (files/ctt-agent/): no git fetch, no network,
+# no SRCREV. The source commit is in files/ctt-agent/SOURCE-COMMIT.
 # Refresh it from the connectivity-tools tree with:  scripts/export-recipe.sh <this folder>
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 SRC_URI = " \
     file://ctt-agent \
     file://ctt-agent-bt.service \
+    file://ctt-agent-ble.service \
 "
-PV = "0.1.0"   # = version in CMakeLists.txt; export-recipe.sh keeps it equal
+PV = "0.2.0"   # = version in CMakeLists.txt; export-recipe.sh keeps it equal
 S = "${WORKDIR}/ctt-agent"
 
 # =============================================================
@@ -35,7 +36,7 @@ EXTRA_OECMAKE = "-DCTT_BUILD_TESTS=OFF"
 # RFCOMM server on channel 22 for ctt-bt / ctt-agent-console when the PC has no SSH to the board.
 # Installed but disabled: enable it only in test images, e.g. in local.conf
 #   SYSTEMD_AUTO_ENABLE:pn-ctt-agent = "enable"
-SYSTEMD_SERVICE:${PN} = "ctt-agent-bt.service"
+SYSTEMD_SERVICE:${PN} = "ctt-agent-bt.service ctt-agent-ble.service"
 SYSTEMD_AUTO_ENABLE:${PN} ??= "disable"
 
 # =============================================================
@@ -45,6 +46,7 @@ SYSTEMD_AUTO_ENABLE:${PN} ??= "disable"
 do_install:append() {
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${WORKDIR}/ctt-agent-bt.service ${D}${systemd_system_unitdir}/
+    install -m 0644 ${WORKDIR}/ctt-agent-ble.service ${D}${systemd_system_unitdir}/
 
     if [ ! -x ${D}${bindir}/ctt-agent ]; then
         bbfatal "ctt-agent was not installed: ${D}${bindir}/ctt-agent"
@@ -58,6 +60,7 @@ FILES:${PN} += " \
     ${bindir}/ctt-agent \
     ${bindir}/ctt-usb-gadget \
     ${systemd_system_unitdir}/ctt-agent-bt.service \
+    ${systemd_system_unitdir}/ctt-agent-ble.service \
 "
 # RFCOMM / i2c-dev may be built as modules.
 RRECOMMENDS:${PN} = "kernel-module-rfcomm kernel-module-i2c-dev"

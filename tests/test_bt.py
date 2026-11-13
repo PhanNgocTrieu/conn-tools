@@ -50,13 +50,13 @@ class BluetoothCtlTest(unittest.TestCase):
             prepare_acceptor(ctl, "NoInputNoOutput")
 
     def test_scan_info_pair_trust_remove(self):
-        with fake_ctl(FAKE_BT_DEVICES=f"{DUT}=board,AA:BB:CC:DD:EE:02=Phone") as ctl:
+        with fake_ctl(FAKE_BT_DEVICES=f"{DUT}=test-board,AA:BB:CC:DD:EE:02=Phone") as ctl:
             ctl.register_agent("DisplayYesNo")
             self.assertIsNone(ctl.info(DUT))
             found = ctl.scan(3, until_addr=DUT)
-            self.assertEqual(found.get(DUT), "board")
+            self.assertEqual(found.get(DUT), "test-board")
             info = ctl.info(DUT)
-            self.assertEqual(info["Name"], "board")
+            self.assertEqual(info["Name"], "test-board")
             self.assertEqual(info["Paired"], "no")
             self.assertEqual(len(info["UUIDs"]), 2)
 

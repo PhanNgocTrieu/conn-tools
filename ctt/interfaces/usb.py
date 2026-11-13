@@ -19,14 +19,19 @@ done
 """
 
 
-def gadget(ex: Executor, action: str, ncm: bool = False, keep_fw: bool = False,
-           timeout: float = 30):
+def gadget(ex: Executor, action: str, ncm: bool = False, keep_services: bool = False,
+           timeout: float = 30, stop_services: list[str] | None = None, role_file: str = ""):
     """Runs scripts/dut-usb-gadget.sh ACTION on the DUT (script is streamed, not copied).
 
-    On the vendor image `up` stops usb-daemon and switches the dwc2 port to device;
-    `down` undoes both. keep_fw=True refuses instead of stopping usb-daemon."""
+    stop_services / role_file come from the board profile (usb.gadget_stop_services,
+    usb.role_file): `up` stops those daemons and switches a dual-role port to device;
+    `down` undoes both. keep_services=True refuses instead of stopping them."""
     script = GADGET_SCRIPT.read_text()
-    args = [action] + (["--ncm"] if ncm and action == "up" else []) + (["--keep-fw"] if keep_fw else [])
+    args = [action] + (["--ncm"] if ncm and action == "up" else []) + (["--keep-services"] if keep_services else [])
+    for svc in stop_services or []:
+        args += ["--stop-service", svc]
+    if role_file:
+        args += ["--role-file", role_file]
     return ex.run(["sh", "-c", script, "dut-usb-gadget.sh", *args], timeout=timeout)
 
 

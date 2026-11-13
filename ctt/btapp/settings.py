@@ -19,10 +19,11 @@ def default_config_path() -> Path:
 
 @dataclass
 class AppSettings:
-    board: str = "root@192.168.1.10"   # SSH target of the board
+    board: str = ""                      # SSH target of the board, e.g. root@192.168.1.10
     no_ssh: bool = False                 # agent already runs on the board (service / UART)
     bt_addr: str = ""                    # board Bluetooth address
     channel: str = AUTO                  # RFCOMM channel, "auto" = ask the board over SSH
+    link: str = "rfcomm"                 # rfcomm | ble-gatt | ble-coc (see ctt.protocol.links)
     block: str = "990"
     duration: str = "10"
 
@@ -39,7 +40,10 @@ class AppSettings:
         return default if ch in ("", AUTO) else int(ch)
 
     def server_channel(self) -> int:
-        """Channel to listen on (SSH: 0 = kernel picks) or to connect to (no SSH)."""
+        """RFCOMM: channel to listen on (SSH: 0 = kernel picks) or to connect to (no SSH).
+        BLE: the RFCOMM channel does not apply (GATT has none, LE CoC uses the default PSM)."""
+        if self.link != "rfcomm":
+            return 0
         return self.channel_or(0 if self.uses_ssh else SERVICE_CHANNEL)
 
 
