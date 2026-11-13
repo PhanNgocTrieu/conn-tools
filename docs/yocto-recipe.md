@@ -68,7 +68,7 @@ SRC_URI = " \
     file://ctt-agent-bt.service \
     file://ctt-agent-ble.service \
 "
-PV = "0.3.0"   # = version in CMakeLists.txt; export-recipe.sh keeps it equal
+PV = "1.0.0"   # = version in CMakeLists.txt; export-recipe.sh keeps it equal
 S = "${WORKDIR}/ctt-agent"
 
 inherit cmake systemd features_check
