@@ -1,0 +1,5 @@
+#!/bin/sh
+# Run the `ctt` CLI from a checkout (no install needed):   scripts/ctt run -t tcp -m bidir ...
+# Tip: alias ctt="$PWD/scripts/ctt"
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+PYTHONPATH="$ROOT/app/src${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m ctt "$@"

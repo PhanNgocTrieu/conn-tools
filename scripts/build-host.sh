@@ -6,7 +6,7 @@ BUILD="$ROOT/build/host"
 
 cmake -S "$ROOT" -B "$BUILD" -DCMAKE_BUILD_TYPE="${BUILD_TYPE:-Release}"
 cmake --build "$BUILD" -j"$(nproc)"
-ln -sf "$BUILD/compile_commands.json" "$ROOT/compile_commands.json"
+ln -sf "$BUILD/compile_commands.json" "$ROOT/build/compile_commands.json"   # IDE / clangd
 
 if [[ "${1:-}" != "--no-test" ]]; then
     (cd "$BUILD" && ctest --output-on-failure)

@@ -1,6 +1,6 @@
-# Build the Windows apps (PowerShell, from the repository root):
-#   dist\ctt-agent.exe              desktop window
-#   dist\ctt-agent-console.exe   console only (menu + sub-commands; usable over SSH)
+# Build the Windows apps (PowerShell, from the repository root) into output\v<version>\windows:
+#   ctt-agent.exe           desktop window
+#   ctt-agent-console.exe   console only (menu + sub-commands; usable over SSH)
 #
 #   .\scripts\build-btapp.ps1                             # both apps
 #   .\scripts\build-btapp.ps1 -Only console               # console app only (= build-console.ps1)
@@ -8,10 +8,11 @@
 #   .\scripts\build-btapp.ps1 -Agent path\to\ctt-agent    # also embed the aarch64 board agent
 #   .\scripts\build-btapp.ps1 -SkipInstall                # use the current Python as is (CI)
 #   .\scripts\build-btapp.ps1 -NoPythonInstall            # fail instead of installing Python
+#   .\scripts\build-btapp.ps1 -OutDir some\dir             # other output folder
 #
 # Installs everything it needs (without -SkipInstall):
 #   1. Python 3.12 for Windows, if no Python 3.10+ is found: winget, per-user (no admin).
-#   2. PyInstaller + requirements-btapp.txt (winrt) into its own venv .venv-win, so the
+#   2. PyInstaller + app\requirements.txt into its own venv build\venv-win, so the
 #      system Python stays clean. Later runs reuse the venv. From WSL use scripts/build-windows.sh, which calls this script.
 # The aarch64 agent is built in WSL: scripts/build-dut.sh --generic --static --strip
 # (build/dut/agent/ctt-agent). GitHub Actions builds everything: .github/workflows/btapp.yml.
@@ -19,7 +20,8 @@ param(
     [ValidateSet("all", "gui", "console")][string]$Only = "all",
     [string]$Agent = "",
     [switch]$SkipInstall,
-    [switch]$NoPythonInstall
+    [switch]$NoPythonInstall,
+    [string]$OutDir = ""
 )
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path -Parent $PSScriptRoot)
@@ -77,45 +79,55 @@ if ($SkipInstall) {
         if (-not $base) { throw "Python install did not produce a usable python.exe" }
     }
     Write-Host "Python: $($base -join ' ')"
-    $venv = ".venv-win"
+    $venv = "build\venv-win"
     if (-not (Test-Path "$venv\Scripts\python.exe")) {
         Write-Host "creating $venv ..."
         & $base[0] $base[1..9] -m venv $venv
         if ($LASTEXITCODE -ne 0) { throw "venv creation failed" }
     }
     $py = @("$venv\Scripts\python.exe")
-    Write-Host "== pip: pyinstaller + requirements-btapp.txt -> $venv"
-    & $py[0] -m pip install --quiet --upgrade pip pyinstaller -r requirements-btapp.txt
+    Write-Host "== pip: pyinstaller + app\requirements.txt -> $venv"
+    & $py[0] -m pip install --quiet --upgrade pip pyinstaller -r app\requirements.txt
     if ($LASTEXITCODE -ne 0) { throw "pip install failed" }
 }
 
-$common = @("--noconfirm", "--onefile", "--paths", ".", "--collect-all", "winrt",
-            "--collect-submodules", "ctt", "--collect-all", "bleak")
+# output\v<version>\windows, version from app\src\ctt\__init__.py
+if ($OutDir -eq "") {
+    $ver = (Select-String -Path "app\src\ctt\__init__.py" -Pattern '__version__ = "(.*)"').Matches[0].Groups[1].Value
+    $OutDir = "output\v$ver\windows"
+}
+New-Item -ItemType Directory -Force -Path $OutDir, "build\pyinstaller" | Out-Null
+$out = (Resolve-Path $OutDir).Path
+$work = (Resolve-Path "build\pyinstaller").Path
+$root = (Get-Location).Path
+$common = @("--noconfirm", "--onefile", "--paths", "$root\app\src",
+            "--distpath", $out, "--workpath", $work, "--specpath", $work,
+            "--collect-all", "winrt", "--collect-submodules", "ctt", "--collect-all", "bleak")
 if ($Agent -ne "") {
-    New-Item -ItemType Directory -Force -Path dist\agent | Out-Null
+    New-Item -ItemType Directory -Force -Path "$work\agent" | Out-Null
     $src = (Resolve-Path $Agent).Path
-    $dest = Join-Path (Get-Location) "dist\agent\ctt-agent"
+    $dest = "$work\agent\ctt-agent"
     if ($src -ne $dest) { Copy-Item $src $dest -Force }
-    $common += @("--add-data", "dist\agent\ctt-agent;agent")
+    $common += @("--add-data", "$dest;agent")
 } else {
     Write-Warning "no -Agent: the exe cannot deploy ctt-agent to the board (Deploy agent / auto deploy)"
 }
 
 $apps = @()
 if ($Only -in @("all", "gui")) {
-    $apps += ,@("ctt-agent", "--windowed", "packaging\ctt_bt_main.py")
+    $apps += ,@("ctt-agent", "--windowed", "$root\packaging\windows\ctt_bt_main.py")
 }
 if ($Only -in @("all", "console")) {
-    $apps += ,@("ctt-agent-console", "--console", "packaging\ctt_agent_console_main.py")
+    $apps += ,@("ctt-agent-console", "--console", "$root\packaging\windows\ctt_agent_console_main.py")
 }
 foreach ($app in $apps) {
     $name, $mode, $entry = $app
     Write-Host "== PyInstaller: $name =="
     & $py[0] -m PyInstaller @common $mode --name $name $entry
     if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed ($name)" }
-    Write-Host "built dist\$name.exe"
+    Write-Host "built $OutDir\$name.exe"
 }
 if ($apps.Count -and ($Only -in @("all", "console"))) {
-    & "dist\ctt-agent-console.exe" --version
-    if ($LASTEXITCODE -ne 0) { throw "dist\ctt-agent-console.exe --version failed" }
+    & "$out\ctt-agent-console.exe" --version
+    if ($LASTEXITCODE -ne 0) { throw "$OutDir\ctt-agent-console.exe --version failed" }
 }

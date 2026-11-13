@@ -10,7 +10,8 @@
 # PyInstaller + winrt into a venv. --no-python-install: fail instead of installing Python.
 # PyInstaller does not work reliably from a \\wsl.localhost path, so the sources are
 # copied to %LOCALAPPDATA%\ctt-build, built there with scripts/build-btapp.ps1
-# (venv .venv-win is kept between runs), and the .exe files are copied back to dist/.
+# (venv build\venv-win is kept between runs), and the .exe files are copied back to
+# output/v<version>/windows/.
 # The aarch64 agent is embedded automatically if build/dut/agent/ctt-agent exists.
 set -euo pipefail
 
@@ -45,16 +46,16 @@ WORK=$(wslpath -u "$WORK_WIN")
 echo "== copy sources -> $WORK_WIN"
 mkdir -p "$WORK"
 rsync -a --delete \
-    --exclude .git --exclude build --exclude out --exclude dist --exclude .venv-win \
+    --exclude .git --exclude /build --exclude /output \
     $( [ -f "$ROOT/.git/info/exclude" ] && echo "--exclude-from=$ROOT/.git/info/exclude" ) --exclude '__pycache__' --exclude '*.private.yaml' \
     "$ROOT/" "$WORK/"
 
 ARGS=(-Only "$ONLY")
 [ "$NOPY" = 1 ] && ARGS+=(-NoPythonInstall)
 if [ -n "$AGENT" ]; then
-    mkdir -p "$WORK/dist/agent"
-    cp "$AGENT" "$WORK/dist/agent/ctt-agent"
-    ARGS+=(-Agent 'dist\agent\ctt-agent')
+    mkdir -p "$WORK/build/stage"
+    cp "$AGENT" "$WORK/build/stage/ctt-agent"
+    ARGS+=(-Agent 'build\stage\ctt-agent')
     echo "== embedding agent: $AGENT"
 fi
 
@@ -66,8 +67,10 @@ case "$ONLY" in
     gui) EXES="ctt-agent.exe" ;;
     *) EXES="ctt-agent-console.exe ctt-agent.exe" ;;
 esac
-mkdir -p "$ROOT/dist"
+VERSION=$(sed -n 's/^project(connectivity-tools VERSION \([0-9.]*\).*/\1/p' "$ROOT/CMakeLists.txt")
+OUT="output/v$VERSION/windows"
+mkdir -p "$ROOT/$OUT"
 for exe in $EXES; do
-    cp "$WORK/dist/$exe" "$ROOT/dist/$exe"
-    echo "-> dist/$exe   (Windows: $(wslpath -w "$ROOT/dist/$exe"))"
+    cp "$WORK/$OUT/$exe" "$ROOT/$OUT/$exe"
+    echo "-> $OUT/$exe   (Windows: $(wslpath -w "$ROOT/$OUT/$exe"))"
 done

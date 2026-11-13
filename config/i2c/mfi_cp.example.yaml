@@ -1,0 +1,64 @@
+# MFi Authentication Coprocessor test - EXAMPLE / TEMPLATE
+#
+# !!! The register addresses, lengths and expected values below are MADE UP so
+# !!! that this file runs against the simulated bus. They are NOT Apple's map.
+# Copy to config/i2c/mfi_cp.private.yaml (git-ignored), then fill in the values
+# from the Apple MFi Accessory Interface Specification for your coprocessor
+# (2.0C / 3.0) and point `bus` at the real adapter:
+#     bus: 1               # /dev/i2c-1: bus of the MFi CP on your board (check the schematic)
+#     address: 0x10        # 7-bit address (check the schematic)
+#
+#   scripts/ctt mfi config/i2c/mfi_cp.private.yaml --dut root@<dut-ip>
+#
+# Step syntax (ctt-agent i2c):
+#   probe | NAME=r:REG:LEN[:EXPECT_HEX] | NAME=w:REG:HEX
+#   NAME=p:REG:MASK:VALUE[:TIMEOUT_MS]  | NAME=d:MS
+#   NAME=rv:LENREG:LENSIZE:DATAREG[:CHUNK[:INC]]   (big-endian length, chunked read)
+#
+# expect: success_rate_min (default 1.0), retries_max, max_ms,
+#         step_max_ms: {step: ms}, step_avg_ms: {step: ms}
+
+# Simulated coprocessor: sleeps (NACKs) 2 ms after each write, 5% random NACKs.
+bus: "fake,nack=0.05,busy_ms=2,r00=05,r01=01,r02=0300,r30=0100,r31=abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab,r32=cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd,r40=00,r50=0080"
+address: 0x10
+retries: 20
+retry_delay_ms: 0.5
+combined: false
+
+tests:
+  - id: MFI-01
+    name: probe
+    repeat: 20
+    steps: [probe]
+
+  - id: MFI-02
+    name: identity
+    repeat: 20
+    steps:
+      - "device_version=r:0x00:1:05"
+      - "fw_version=r:0x01:1"
+      - "protocol=r:0x02:2:0300"
+    expect: {step_max_ms: {device_version: 50}}
+
+  - id: MFI-03
+    name: certificate
+    repeat: 10                       # every read must return identical bytes
+    steps:
+      - "certificate=rv:0x30:2:0x31:128:1"
+
+  - id: MFI-04
+    name: challenge-response
+    repeat: 20
+    steps:
+      - "challenge=w:0x20:00112233445566778899aabbccddeeff00112233"
+      - "start=w:0x40:01"
+      - "done=p:0x40:0xff:0x01:500"
+      - "response=rv:0x50:2:0x51:128:1"
+    expect: {step_max_ms: {done: 500}}
+
+  - id: MFI-05
+    name: stress-read
+    repeat: 500
+    steps:
+      - "device_version=r:0x00:1:05"
+    expect: {success_rate_min: 1.0}

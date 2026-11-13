@@ -1,0 +1,36 @@
+# Board profile - EXAMPLE. CTT works without any profile on a board with the standard Linux stack
+# (systemd, BlueZ, configfs USB gadget, nl80211 WiFi). Write a profile only for what your
+# product adds. Copy to config/boards/board.private.yaml (git-ignored) or pass --board-profile FILE /
+# set CTT_BOARD_PROFILE. Every key is optional. Reference: app/src/ctt/platform/board.py
+name: my-board
+
+# systemd units shown by `ctt board status` and the app's Check board
+services: [bluetooth, my-bt-daemon, my-usb-daemon]
+
+# extra status lines: name -> shell command run on the board
+status:
+  bt-daemon-version: my-bt-daemon --version
+
+bluetooth:
+  max_bonds: 5                          # warn before pairing when the board holds this many bonds
+  # bonds: my-bt-cli count              # shell printing the number of bonds (default: bluetoothctl)
+  # address: my-bt-cli address          # shell printing the BD address (default: sysfs / hciconfig)
+  # unpair: my-bt-cli remove {addr}     # default: bluetoothctl remove {addr}
+  # When a daemon of the product is the BlueZ agent, tell CTT how to accept a pairing
+  # (default: CTT registers its own bluetoothctl agent):
+  # pairing:
+  #   setup: [my-bt-cli power on, my-bt-cli pairable on, my-bt-cli discoverable on]
+  #   confirm: my-bt-cli confirm-loop   # long running, prints one "ctt-confirm" line per request
+  #   stop: pkill -f confirm-loop
+
+usb:
+  gadget_stop_services: []              # daemons owning the dual-role port, stopped during `ctt usb gadget up`
+  role_file: ""                         # dual-role switch; empty = auto (*/dwc2_drdmode, usb_role)
+
+conflicts:
+  - service: my-usb-daemon
+    affects: [usb]                      # usb | bt-pairing | wifi
+    message: my-usb-daemon owns the USB port; run `ctt usb gadget up` first.
+
+commands:                               # `ctt board cmd NAME`
+  wifi-ap: my-wifi-cli mode ap

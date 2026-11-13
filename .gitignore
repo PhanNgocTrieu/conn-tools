@@ -1,12 +1,11 @@
 build/
-out/
+# release files per version (output/vX.Y.Z/...), test reports (output/reports/)
+output/
 compile_commands.json
 __pycache__/
 *.pyc
 *.egg-info/
 .venv/
-# MFi register maps, board profiles of a project (configs/board.private.yaml): never committed
+# MFi register maps, board profiles of a project (config/boards/board.private.yaml): never committed
 *.private.yaml
 *.private.json
-dist/
-.venv-win/

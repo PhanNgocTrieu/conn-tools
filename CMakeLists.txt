@@ -17,14 +17,15 @@ if(CTT_BUILD_TESTS)
   enable_testing()
 endif()
 
+# C++ agent -> build/<dir>/agent/ctt-agent
 add_subdirectory(agent)
 
-# Python orchestrator tests (use the ctt-agent built here)
+# Python tests of app/ (use the ctt-agent built here)
 if(CTT_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
   find_package(Python3 COMPONENTS Interpreter)
   if(Python3_Interpreter_FOUND)
     add_test(NAME python
-             COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests
+             COMMAND ${Python3_EXECUTABLE} -m unittest discover -s app/tests
              WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
     set_tests_properties(python PROPERTIES
              ENVIRONMENT "CTT_AGENT=$<TARGET_FILE:ctt-agent>;CTT_BOARD_PROFILE=none" TIMEOUT 600)

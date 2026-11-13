@@ -1,4 +1,4 @@
-# Build only dist\ctt-agent-console.exe (console app, no window).
+# Build only ctt-agent-console.exe (console app, no window) into output\v<version>\windows.
 #   .\scripts\build-console.ps1
 #   .\scripts\build-console.ps1 -Agent build\dut\agent\ctt-agent   # embed the board agent
 # Same options as build-btapp.ps1 (-Agent, -SkipInstall, -NoPythonInstall); installs Python

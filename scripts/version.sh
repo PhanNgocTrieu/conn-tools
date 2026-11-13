@@ -1,5 +1,5 @@
 #!/bin/sh
-# One version for the whole tool: agent (CMakeLists.txt), Python apps (pyproject.toml, ctt/__init__.py).
+# One version for the whole tool: agent (CMakeLists.txt), Python apps (app/pyproject.toml, app/src/ctt/__init__.py).
 #
 #   scripts/version.sh                 show the version of each place
 #   scripts/version.sh set 0.2.0       write 0.2.0 everywhere (then commit, tag v0.2.0)
@@ -7,8 +7,8 @@
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 CM=$ROOT/CMakeLists.txt
-PP=$ROOT/pyproject.toml
-PY=$ROOT/ctt/__init__.py
+PP=$ROOT/app/pyproject.toml
+PY=$ROOT/app/src/ctt/__init__.py
 
 cmake_v() { sed -n 's/^project(connectivity-tools VERSION \([0-9.]*\).*/\1/p' "$CM"; }
 pyproj_v() { sed -n 's/^version = "\(.*\)"/\1/p' "$PP"; }
@@ -17,8 +17,8 @@ python_v() { sed -n 's/^__version__ = "\(.*\)"/\1/p' "$PY"; }
 case "${1:-show}" in
 show)
     echo "CMakeLists.txt   board / Linux agent  $(cmake_v)"
-    echo "pyproject.toml   Python package      $(pyproj_v)"
-    echo "ctt/__init__.py  Windows apps        $(python_v)"
+    echo "app/pyproject.toml  Python package   $(pyproj_v)"
+    echo "ctt/__init__.py  Python apps         $(python_v)"
     ;;
 set)
     v=${2:?usage: version.sh set X.Y.Z}
@@ -26,7 +26,7 @@ set)
     sed -i "s/^project(connectivity-tools VERSION [0-9.]*/project(connectivity-tools VERSION $v/" "$CM"
     sed -i "s/^version = \".*\"/version = \"$v\"/" "$PP"
     sed -i "s/^__version__ = \".*\"/__version__ = \"$v\"/" "$PY"
-    sed -i "s/^PV = \"[^\"]*\"/PV = \"$v\"/" "$ROOT/yocto/recipe-local-src/ctt-agent.bb"   # recipe template (source kept in the layer)
+    sed -i "s/^PV = \"[^\"]*\"/PV = \"$v\"/" "$ROOT/packaging/yocto/recipe-local-src/ctt-agent.bb"   # recipe template (source kept in the layer)
     "$0" show
     ;;
 check)

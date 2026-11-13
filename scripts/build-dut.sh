@@ -41,7 +41,7 @@ if [[ -n "$SDK_ENV" ]]; then
 elif [[ $GENERIC -eq 1 ]]; then
     command -v aarch64-linux-gnu-g++ >/dev/null || {
         echo "aarch64-linux-gnu-g++ not found: sudo apt install g++-aarch64-linux-gnu" >&2; exit 1; }
-    CMAKE_ARGS+=(-DCMAKE_TOOLCHAIN_FILE="$ROOT/cmake/toolchains/aarch64-linux-gnu.cmake")
+    CMAKE_ARGS+=(-DCMAKE_TOOLCHAIN_FILE="$ROOT/agent/cmake/toolchains/aarch64-linux-gnu.cmake")
     echo "Using generic aarch64-linux-gnu toolchain (static=$STATIC)"
 else
     echo "choose --sdk <environment-setup-file> or --generic" >&2; exit 64
@@ -57,4 +57,4 @@ file "$BUILD/agent/ctt-agent" 2>/dev/null || true
 ls -l "$BUILD/agent/ctt-agent" | awk '{print "size: " $5 " bytes"}'
 echo
 echo "DUT agent: $BUILD/agent/ctt-agent"
-echo "deploy with: python3 -m ctt deploy --dut root@<dut-ip>"
+echo "deploy with: scripts/ctt deploy --dut root@<dut-ip>"

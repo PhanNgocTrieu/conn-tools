@@ -7,7 +7,7 @@
 
 namespace ctt::usb {
 
-// Default IDs used by scripts/dut-usb-gadget.sh (Linux Foundation,
+// Default IDs used by agent/scripts/dut-usb-gadget.sh (Linux Foundation,
 // "Multifunction Composite Gadget") - fine for lab use, not for products.
 constexpr uint16_t kDefaultVid = 0x1d6b;
 constexpr uint16_t kDefaultPid = 0x0104;

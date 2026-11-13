@@ -9,7 +9,7 @@ CTT measures **throughput, latency and data integrity** of connectivity links be
 
 Every test checks the sequence number and CRC of each block, and prints a live trace on both ends once per second. Results are written in machine-readable formats (JSON, CSV, JUnit, HTML).
 
-> The detailed guides in [`docs/`](docs) are written in Vietnamese.
+> The detailed guides in [`docs/`](docs/README.md) are written in Vietnamese.
 
 ---
 
@@ -31,7 +31,7 @@ Every test checks the sequence number and CRC of each block, and prints a live t
 ## Features
 
 - **One test protocol for every link.**
-  - [CTP](docs/ctp-spec.md) runs over RFCOMM, L2CAP (BR/EDR and LE CoC), BLE GATT, TCP, UDP, USB bulk (FunctionFS) and AF_UNIX.
+  - [CTP](docs/project/ctp-spec.md) runs over RFCOMM, L2CAP (BR/EDR and LE CoC), BLE GATT, TCP, UDP, USB bulk (FunctionFS) and AF_UNIX.
   - The same four modes work on every link: `tx`, `rx`, `bidir` and `echo`.
 - **Integrity is always checked.**
   - Every block carries a sequence number and a CRC32.
@@ -88,7 +88,7 @@ Every test checks the sequence number and CRC of each block, and prints a live t
 **Board requirements:**
 - Linux with systemd and BlueZ (bluetoothd);
 - configfs USB gadget, nl80211 WiFi;
-- the kernel options listed in [docs/yocto-recipe.md](docs/yocto-recipe.md#5-kiểm-tra-kernel).
+- the kernel options listed in [docs/project/yocto-recipe.md](docs/project/yocto-recipe.md#5-kiểm-tra-kernel).
 
 **PC requirements:** Windows 10/11 or Linux, with a Bluetooth adapter managed by the operating system.
 
@@ -108,13 +108,13 @@ Download from [Releases](https://github.com/PhanNgocTrieu/conn-tools/releases): 
 
 ### Agent in the board image
 
-A Yocto recipe and systemd services (disabled by default) are provided, see [docs/yocto-recipe.md](docs/yocto-recipe.md). If your build machine cannot reach this repository, `scripts/export-recipe.sh` exports a recipe that carries its own source.
+A Yocto recipe and systemd services (disabled by default) are provided, see [docs/project/yocto-recipe.md](docs/project/yocto-recipe.md). If your build machine cannot reach this repository, `scripts/export-recipe.sh` exports a recipe that carries its own source.
 
 ### From source
 
 ```bash
-scripts/setup-wsl.sh --install   # Ubuntu / WSL packages (first time)
-scripts/build-all.sh             # host agent + tests, aarch64 board agent, both .exe, with a build report
+scripts/dev/setup-wsl.sh --install   # Ubuntu / WSL packages (first time)
+scripts/build-all.sh               # every release file into output/v<version>/, with a build report
 ```
 
 See [Development](#development) for details.
@@ -141,17 +141,17 @@ ctt-agent-console.exe suite --addr <BOARD_BT_ADDR> --link ble-gatt
 ctt-agent-console.exe run   --addr <BOARD_BT_ADDR> --channel 22 -m bidir -d 30 --json > result.json
 ```
 
-Run it without arguments to get the numbered menu. All commands: [docs/bt-app.md](docs/bt-app.md).
+Run it without arguments to get the numbered menu. All commands: [docs/guides/bt-app.md](docs/guides/bt-app.md).
 
 ### 3. `ctt` CLI (Linux / WSL): WiFi, Bluetooth, USB, I2C
 
 ```bash
 export CTT_DUT=root@<board-ip>
-python3 -m ctt deploy                                   # copy the agent to the board
-python3 -m ctt board status                             # board state (according to the board profile)
-python3 -m ctt run -t tcp -m bidir -d 30s               # a single test
-python3 -m ctt profile profiles/wifi_tcp_throughput.yaml
-python3 -m ctt selftest                                 # self-check over TCP loopback, no board needed
+scripts/ctt deploy                                   # copy the agent to the board
+scripts/ctt board status                             # board state (according to the board profile)
+scripts/ctt run -t tcp -m bidir -d 30s               # a single test
+scripts/ctt profile config/profiles/wifi_tcp_throughput.yaml
+scripts/ctt selftest                                 # self-check over TCP loopback, no board needed
 ```
 
 ## Results and reports
@@ -170,7 +170,7 @@ python3 -m ctt selftest                                 # self-check over TCP lo
   - `baseline` / `target`: `PASS` / `FAIL` against limits.
 - **Output files:**
   - apps: `ctt-results/suite-<level>-<time>.json` and `.csv`;
-  - CLI: `out/<time>_<name>/` with `report.html`, `junit.xml` and CSV/JSON. `ctt compare` checks a run against a baseline run.
+  - CLI: `output/reports/<time>_<name>/` with `report.html`, `junit.xml` and CSV/JSON. `ctt compare` checks a run against a baseline run.
 - **Exit codes:**
   - `0`: success;
   - `1`: failed checks;
@@ -201,26 +201,26 @@ commands:
 - **Lookup order:**
   1. `--board-profile FILE` or `CTT_BOARD_PROFILE`;
   2. `./board.yaml`;
-  3. `configs/board.yaml`;
-  4. `configs/board.private.yaml`;
+  3. `config/boards/board.yaml`;
+  4. `config/boards/board.private.yaml`;
   5. `%APPDATA%\ctt-bt\board.yaml`.
-- **Full template:** [configs/board.example.yaml](configs/board.example.yaml).
+- **Full template:** [config/boards/board.example.yaml](config/boards/board.example.yaml).
 - **Note:** `*.private.yaml` files are never committed. Keep project-specific information there.
 
 ## Documentation
 
 | Topic | Document |
 |---|---|
-| Bluetooth apps (desktop, console, sub-commands) | [docs/bt-app.md](docs/bt-app.md) |
-| BLE: design, GATT service, usage | [docs/bt-ble.md](docs/bt-ble.md) |
-| Bluetooth test plan | [docs/bt-test-plan.md](docs/bt-test-plan.md) |
-| Bluetooth test cases (serial console + console / desktop app) | [docs/bt-test-cases.md](docs/bt-test-cases.md) |
-| Step by step on a board with a serial console only | [docs/bt-client-test.md](docs/bt-client-test.md) |
-| WiFi, USB, I2C with the `ctt` CLI | [docs/TESTING.md](docs/TESTING.md), [docs/usb.md](docs/usb.md), [docs/bluetooth.md](docs/bluetooth.md) |
-| CTP protocol | [docs/ctp-spec.md](docs/ctp-spec.md) |
-| Yocto: recipe, services, kernel | [docs/yocto-recipe.md](docs/yocto-recipe.md) |
-| Releasing | [docs/release.md](docs/release.md) |
-| WSL environment | [docs/wsl-setup.md](docs/wsl-setup.md) |
+| Bluetooth apps (desktop, console, sub-commands) | [docs/guides/bt-app.md](docs/guides/bt-app.md) |
+| BLE: design, GATT service, usage | [docs/guides/bt-ble.md](docs/guides/bt-ble.md) |
+| Bluetooth test plan | [docs/guides/bt-test-plan.md](docs/guides/bt-test-plan.md) |
+| Bluetooth test cases (serial console + console / desktop app) | [docs/guides/bt-test-cases.md](docs/guides/bt-test-cases.md) |
+| Step by step on a board with a serial console only | [docs/guides/bt-client-test.md](docs/guides/bt-client-test.md) |
+| WiFi, USB, I2C with the `ctt` CLI | [docs/guides/TESTING.md](docs/guides/TESTING.md), [docs/guides/usb.md](docs/guides/usb.md), [docs/guides/bluetooth.md](docs/guides/bluetooth.md) |
+| CTP protocol | [docs/project/ctp-spec.md](docs/project/ctp-spec.md) |
+| Yocto: recipe, services, kernel | [docs/project/yocto-recipe.md](docs/project/yocto-recipe.md) |
+| Releasing | [docs/project/release.md](docs/project/release.md) |
+| WSL environment | [docs/project/wsl-setup.md](docs/project/wsl-setup.md) |
 
 ## Development
 
@@ -228,17 +228,19 @@ commands:
 
 | Command | Result |
 |---|---|
-| `scripts/build-all.sh` | Everything, with a report of the output paths in `dist/BUILD-REPORT.txt` (`--no-test`, `--no-windows`) |
-| `scripts/build-host.sh` | Agent for the Linux/WSL host, then all tests (C++ and Python) |
-| `scripts/build-dut.sh --generic --static --strip` | aarch64 board agent (`--sdk <env>` to use a Yocto SDK) |
-| `scripts/build-windows.sh [all\|gui\|console]` | Both `.exe` from WSL; installs Python 3.12 per user (winget) on first use |
+| `scripts/build-all.sh` | All release files into `output/v<version>/` (`linux-aarch64/`, `linux-x86_64/`, `windows/`), with `SHA256SUMS` and `BUILD-REPORT.txt`. Options: `--no-test`, `--no-windows` |
+| `scripts/build-host.sh` | Agent for this PC (`build/host`), then all tests (C++ and Python) |
+| `scripts/build-dut.sh --generic --static --strip` | aarch64 board agent (`build/dut`); `--sdk <env>` to use a Yocto SDK |
+| `scripts/build-windows.sh [all\|gui\|console]` | Both `.exe` from WSL into `output/v<version>/windows/`; installs Python 3.12 per user (winget) on first use |
 | `.\scripts\build-btapp.ps1` | Same, from PowerShell |
+
+From a checkout, run the tools without installing anything: `scripts/ctt …` (CLI) and `scripts/ctt-app …` (Bluetooth app on Linux / WSL).
 
 ### Tests
 
 ```bash
 scripts/build-host.sh                        # CTest: C++ unit tests, loopback, all Python tests
-python3 -m unittest discover -s tests        # Python only
+python3 -m unittest discover -s app/tests        # Python only
 ```
 
 The tests run without hardware:
@@ -254,33 +256,42 @@ Set `CTT_BOARD_PROFILE=none` to keep local board profiles out of the tests.
 - **A push to `main`** refreshes the `latest-main` pre-release.
 - **A `vX.Y.Z` tag** publishes a release. CI checks that the tag matches the version in the sources (`scripts/version.sh check`).
 
-Full procedure: [docs/release.md](docs/release.md).
+Full procedure: [docs/project/release.md](docs/project/release.md).
 
 ```bash
 scripts/version.sh set X.Y.Z && git commit -am "Release X.Y.Z" && git tag -a vX.Y.Z -m "CTT X.Y.Z"
 git push origin main vX.Y.Z
 ```
 
-### Source layout
+### Repository layout
+
+Each top-level folder answers one question:
 
 ```
-agent/            ctt-agent (C++17): CTP, transports (tcp, udp, rfcomm, l2cap, gatt, usb, unix),
-                  server / client / pipe, minimal D-Bus client, i2c, storage
-ctt/
-  protocol/       pure-Python CTP client, BLE links (bleak, socket bridge), per-platform capabilities
-  btapp/          Bluetooth apps: shared service, gui/ (Tkinter), console/ (menu + sub-commands)
-  bluetooth/      bluetoothctl, pairing (WinRT / BlueZ), board control over SSH
-  platform/       board profile
-  interfaces/     wifi, usb, mfi
-  testing/        runner, YAML profiles
-  reporting/      console, HTML / JUnit, baseline comparison
-  cli/            `ctt` CLI (one class per command in cli/commands/)
-configs/          example board profile, example I2C configuration
-profiles/         YAML test profiles
-scripts/          build, version, recipe export, USB gadget, environment setup
-yocto/            meta-ctt layer (git) and a recipe with local source (recipe-local-src)
-tests/            Python tests, fake bluetoothctl / BlueZ / agent
-docs/             guides (Vietnamese)
+agent/          What runs on the board?   C++17 agent with its own CMake project
+  include/ src/   CTP, transports (tcp, udp, rfcomm, l2cap, gatt, usb, unix), server / client / pipe,
+                  minimal D-Bus client, i2c, storage
+  tests/          unit tests, loopback test
+  cmake/          cross toolchains
+  scripts/        USB gadget helper (installed on the board as ctt-usb-gadget)
+app/            What runs on the PC?      Python package (src layout)
+  src/ctt/        protocol/ (CTP client, BLE links), btapp/ (desktop + console apps), bluetooth/,
+                  platform/ (board profile), interfaces/, testing/, reporting/, cli/, paths.py
+  tests/          tests and fakes/ (bluetoothctl, BlueZ on D-Bus, agent, ssh)
+  pyproject.toml  requirements.txt
+packaging/      How is it shipped?
+  yocto/          meta-ctt layer (git) and recipe-local-src (source kept in your layer)
+  systemd/        ctt-agent-bt.service, ctt-agent-ble.service (used by both recipes)
+  windows/        PyInstaller entry points of ctt-agent.exe / ctt-agent-console.exe
+config/         What do users adjust?
+  boards/         board profiles (board.example.yaml; *.private.yaml stay local)
+  profiles/       YAML test profiles for `ctt profile`
+  i2c/            I2C test configuration example
+scripts/        What is automated?        build-*, version.sh, export-recipe.sh, ctt / ctt-app launchers
+  dev/            development environment (setup-wsl.sh, usbipd-attach.ps1)
+docs/           project/ (design, release, Yocto, environment), guides/ (test guides)
+output/         (not committed) v<version>/ release files, reports/ test reports
+build/          (not committed) CMake build trees, logs, PyInstaller work files
 ```
 
 ## Status and known limitations

@@ -2,7 +2,7 @@
 //
 // listen()  = DEVICE side (the DUT as a USB gadget) via FunctionFS:
 //   endpoint: FunctionFS mount directory (default /dev/ffs-ctt), created by
-//             scripts/dut-usb-gadget.sh
+//             agent/scripts/dut-usb-gadget.sh (ctt-usb-gadget on the board)
 //   -o gadget=/sys/kernel/config/usb_gadget/ctt -o udc=auto|<udc name>
 //             bind the gadget to the UDC once descriptors are written
 // connect() = HOST side via usbdevfs (no libusb needed):
@@ -98,7 +98,7 @@ public:
         e_->ep0 = ::open((dir_ + "/ep0").c_str(), O_RDWR | O_CLOEXEC);
         if (e_->ep0 < 0)
             throw std::runtime_error(errstr("open " + dir_ + "/ep0") +
-                                     " (FunctionFS mounted? run scripts/dut-usb-gadget.sh up)");
+                                     " (FunctionFS mounted? run ctt-usb-gadget up / ctt usb gadget up)");
         write_all_fd(e_->ep0, usb::ffs_descriptors(), "write FunctionFS descriptors");
         write_all_fd(e_->ep0, usb::ffs_strings("CTT bulk"), "write FunctionFS strings");
 

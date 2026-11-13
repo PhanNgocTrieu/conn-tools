@@ -1,0 +1,6 @@
+#!/bin/sh
+# Run the Bluetooth app from a checkout (Linux / WSL; the Windows .exe are built by build-windows.sh):
+#   scripts/ctt-app              desktop window (needs python3-tk)
+#   scripts/ctt-app console      console menu;  scripts/ctt-app suite --addr ... etc.
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+PYTHONPATH="$ROOT/app/src${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m ctt.btapp "$@"
