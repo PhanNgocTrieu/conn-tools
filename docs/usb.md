@@ -9,7 +9,7 @@ Cách test phụ thuộc vào vai trò của cổng USB trên board. Xem bằng 
 
 Cổng OTG có thể đổi vai trò qua `/sys/class/usb_role/*/role` (`host` / `device`), tuỳ BSP.
 
-**Cổng dual-role có daemon của sản phẩm giữ:** khai báo trong board profile `usb.gadget_stop_services` (daemon cần dừng khi chạy gadget) và `usb.role_file` (file sysfs đổi role, ví dụ `…/dwc2_drdmode` của controller dwc2). `ctt usb gadget up` dừng daemon, chuyển cổng sang device; `down` trả lại như cũ. `usb-daemon` giữ cổng ở chế độ host, và UDC **chỉ xuất hiện khi role là `device`**, nên `/sys/class/udc` trống là bình thường. `ctt usb gadget up` tự làm các bước: dừng `usb-daemon`, ghi `device`, chờ UDC, dựng gadget CTT. `ctt usb gadget down` gỡ gadget, ghi lại `host` và start lại `usb-daemon`. Những gì đã thay đổi được lưu ở `/run/ctt-usb-gadget`. Dùng `--keep-fw` nếu muốn lệnh báo lỗi thay vì dừng `usb-daemon`.
+**Cổng dual-role có daemon của sản phẩm giữ:** khai báo trong board profile `usb.gadget_stop_services` (daemon cần dừng khi chạy gadget) và `usb.role_file` (file sysfs đổi role, ví dụ `…/dwc2_drdmode` của controller dwc2). Khi daemon đó giữ cổng ở chế độ host, UDC **chỉ xuất hiện khi role là `device`**, nên `/sys/class/udc` trống là bình thường. `ctt usb gadget up` tự làm các bước: dừng các daemon đó, ghi `device`, chờ UDC, dựng gadget CTT. `ctt usb gadget down` gỡ gadget, ghi lại `host` và start lại các daemon. Những gì đã thay đổi được lưu ở `/run/ctt-usb-gadget`. Dùng `--keep-services` nếu muốn lệnh báo lỗi thay vì dừng daemon.
 
 ## 1. Bulk throughput: board làm gadget
 
