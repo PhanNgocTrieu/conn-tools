@@ -1,8 +1,8 @@
-# App test Bluetooth: `ctt-agent` (GUI) và `ctt-agent-console` (console)
+# App test Bluetooth: `ctt-agent` (GUI) và `ctt-agent` (console)
 
 Hai app dùng chung một lõi nghiệp vụ và một file cấu hình, chỉ khác cách hiển thị. Giao diện của app bằng **tiếng Anh**; tài liệu này ghi tên nút và menu đúng như trên app.
 
-| | `ctt-agent.exe` | `ctt-agent-console.exe` |
+| | `ctt-agent-UI.exe` | `ctt-agent.exe` |
 |---|---|---|
 | Giao diện | Cửa sổ 3 tab, có biểu đồ | Menu số trong console, cùng các lệnh con |
 | Dùng khi | Ngồi trực tiếp trước PC | Vào PC qua SSH, hoặc cần chạy bằng script |
@@ -46,7 +46,7 @@ discoverable on
 
 Nếu Bluetooth của board do một daemon riêng của sản phẩm quản lý (nó là agent mặc định của BlueZ), hãy dùng công cụ của daemon đó. Có thể khai báo các lệnh ấy trong board profile (`bluetooth.pairing`, `commands`) để app tự chạy khi có SSH, hoặc để gọi bằng `ctt board cmd <tên>`. Xem [config/boards/board.example.yaml](../../config/boards/board.example.yaml).
 
-## 2. GUI: `ctt-agent.exe`
+## 2. GUI: `ctt-agent-UI.exe`
 
 ### Tab `1. Connect`
 | Vùng | Nút / ô | Tác dụng |
@@ -82,7 +82,7 @@ Bộ test case có ngưỡng Mbit/s (BT-TP-01…06) chạy bằng console (`suit
   - gõ vào khung này rồi bấm **Board sends → PC** để board gửi về PC (dòng `board tx`).
 - **Format**: `Text` hoặc `Hex`. **Line end**: `(none)` / `\n` / `\r\n`.
 
-## 3. Console: `ctt-agent-console.exe` <a id="console"></a>
+## 3. Console: `ctt-agent.exe` <a id="console"></a>
 
 Chạy không có tham số sẽ mở menu:
 
@@ -121,39 +121,39 @@ Choice:
 ### Lệnh con (dùng trong script / CI)
 
 ```bat
-ctt-agent-console scan
-ctt-agent-console paired
-ctt-agent-console pair AA:BB:CC:DD:EE:01 --board root@192.168.1.10
-ctt-agent-console run --board root@192.168.1.10 -m bidir -d 20          :: tự deploy agent nếu thiếu
-ctt-agent-console run --addr AA:BB:CC:DD:EE:01 --channel 22 -m tx -d 30   :: không SSH
-ctt-agent-console run ... -m tx --min-up 1.0                               :: FAIL nếu PC->board < 1.0 Mbit/s
-ctt-agent-console run ... -m echo -b 64 --max-rtt-p99 100                  :: FAIL nếu RTT p99 > 100 ms
-ctt-agent-console run ... --json > result.json                              :: kết quả JSON (có "checks", "verdict")
-ctt-agent-console suite --list -l target                                    :: xem các case và ngưỡng
-ctt-agent-console suite --addr AA:BB:CC:DD:EE:01 --channel 22               :: cả bộ BT-TP-01..06, chỉ đo (level measure)
-ctt-agent-console suite --board root@192.168.1.10 -l baseline             :: chạy cả bộ, chấm theo ngưỡng baseline
-ctt-agent-console suite --addr AA:BB:CC:DD:EE:01 --channel 22 -l target --only BT-TP-01,BT-TP-02
-ctt-agent-console suite --dump > my-suite.json                              :: sửa ngưỡng rồi chạy với --file my-suite.json
-ctt-agent-console suite --addr AA:BB:CC:DD:EE:01 --channel 22 -q           :: không in trace mỗi giây
-ctt-agent-console caps                                                      :: link nào PC này chạy được (RFCOMM / BLE GATT / BLE CoC)
-ctt-agent-console ble-scan                                                  :: tìm board đang chạy ctt-agent server -t gatt
-ctt-agent-console suite --addr AA:BB:CC:DD:EE:01 --link ble-gatt            :: bộ BLE-TP-01..06 qua BLE GATT
-ctt-agent-console run --addr AA:BB:CC:DD:EE:01 --link ble-gatt -m rx -d 30 -b 244
-ctt-agent-console term --board root@192.168.1.10
-ctt-agent-console unpair AA:BB:CC:DD:EE:01
+ctt-agent scan
+ctt-agent paired
+ctt-agent pair AA:BB:CC:DD:EE:01 --board root@192.168.1.10
+ctt-agent run --board root@192.168.1.10 -m bidir -d 20          :: tự deploy agent nếu thiếu
+ctt-agent run --addr AA:BB:CC:DD:EE:01 --channel 22 -m tx -d 30   :: không SSH
+ctt-agent run ... -m tx --min-up 1.0                               :: FAIL nếu PC->board < 1.0 Mbit/s
+ctt-agent run ... -m echo -b 64 --max-rtt-p99 100                  :: FAIL nếu RTT p99 > 100 ms
+ctt-agent run ... --json > result.json                              :: kết quả JSON (có "checks", "verdict")
+ctt-agent suite --list -l target                                    :: xem các case và ngưỡng
+ctt-agent suite --addr AA:BB:CC:DD:EE:01 --channel 22               :: cả bộ BT-TP-01..06, chỉ đo (level measure)
+ctt-agent suite --board root@192.168.1.10 -l baseline             :: chạy cả bộ, chấm theo ngưỡng baseline
+ctt-agent suite --addr AA:BB:CC:DD:EE:01 --channel 22 -l target --only BT-TP-01,BT-TP-02
+ctt-agent suite --dump > my-suite.json                              :: sửa ngưỡng rồi chạy với --file my-suite.json
+ctt-agent suite --addr AA:BB:CC:DD:EE:01 --channel 22 -q           :: không in trace mỗi giây
+ctt-agent caps                                                      :: link nào PC này chạy được (RFCOMM / BLE GATT / BLE CoC)
+ctt-agent ble-scan                                                  :: tìm board đang chạy ctt-agent server -t gatt
+ctt-agent suite --addr AA:BB:CC:DD:EE:01 --link ble-gatt            :: bộ BLE-TP-01..06 qua BLE GATT
+ctt-agent run --addr AA:BB:CC:DD:EE:01 --link ble-gatt -m rx -d 30 -b 244
+ctt-agent term --board root@192.168.1.10
+ctt-agent unpair AA:BB:CC:DD:EE:01
 ```
 
 Trong lúc chạy, `run` và `suite` in mỗi giây một dòng: tốc độ và tổng đã gửi / đã nhận của PC, kèm dòng `[board] …` của agent trên board (khi có SSH). Cách đọc: [bt-client-test.md](bt-client-test.md#theo-dõi-trong-lúc-chạy-trace-mỗi-giây).
 
 **Link** (`--link`, menu 1, hoặc mục **Link** ở tab Connect): `rfcomm` (mặc định), `ble-gatt`, `ble-coc`. Mỗi PC chỉ cho chọn link nó hỗ trợ; xem [bt-ble.md](bt-ble.md).
 
-**Level của `suite`**: mặc định `measure` (chỉ đo; cột kết quả `OK` / `DATA ERR`), hoặc `baseline` / `target` (PASS/FAIL theo ngưỡng). `run` trả exit code 0 khi PASS, 1 khi FAIL. `suite` ở level `measure` trả 0 khi mọi case chạy được; ở `baseline` / `target` trả 0 khi mọi case PASS. `ctt-agent.exe` nhận đúng các lệnh con này (ví dụ `ctt-agent.exe run ...`). Trong WSL dùng `scripts/ctt-app <lệnh>`.
+**Level của `suite`**: mặc định `measure` (chỉ đo; cột kết quả `OK` / `DATA ERR`), hoặc `baseline` / `target` (PASS/FAIL theo ngưỡng). `run` trả exit code 0 khi PASS, 1 khi FAIL. `suite` ở level `measure` trả 0 khi mọi case chạy được; ở `baseline` / `target` trả 0 khi mọi case PASS. `ctt-agent-UI.exe` nhận đúng các lệnh con này (ví dụ `ctt-agent-UI.exe run ...`). Trong WSL dùng `scripts/ctt-app <lệnh>`.
 
 ## 4. Cài đặt
 
 **Windows**: không cần cài gì; chép 2 file `.exe` là chạy. Muốn SSH tới board thì cần SSH key mà board chấp nhận: lệnh `ssh root@<board>` phải chạy được trong PowerShell mà không hỏi mật khẩu.
 
-**Vào PC Windows qua SSH** (setup *Client Test*): bật OpenSSH Server trên PC đó, SSH vào rồi chạy `ctt-agent-console.exe`. Đừng chạy `ctt-agent.exe` qua SSH, vì cửa sổ sẽ không hiện ra. Console luôn in UTF-8, nên đọc được đúng chữ qua SSH.
+**Vào PC Windows qua SSH** (setup *Client Test*): bật OpenSSH Server trên PC đó, SSH vào rồi chạy `ctt-agent.exe`. Đừng chạy `ctt-agent-UI.exe` qua SSH, vì cửa sổ sẽ không hiện ra. Console luôn in UTF-8, nên đọc được đúng chữ qua SSH.
 
 **WSL / Linux**: `sudo apt install python3-tk bluez`. Gắn dongle vào WSL bằng `scripts/dev/usbipd-attach.ps1`. Nếu sau đó `hciconfig -a` vẫn trống, kiểm tra `lsusb` có thấy dongle không, module `btusb` đã nạp chưa và đã có firmware (`linux-firmware`) chưa; xem [wsl-setup.md](../project/wsl-setup.md).
 

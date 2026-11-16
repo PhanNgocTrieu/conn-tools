@@ -24,3 +24,4 @@ Guides are written in Vietnamese; the [project README](../README.md) is the Engl
 | [guides/TESTING.md](guides/TESTING.md) | `ctt` CLI test catalogue: WiFi, Bluetooth, USB, I2C |
 | [guides/bluetooth.md](guides/bluetooth.md) | Bluetooth with the `ctt` CLI (RFCOMM / L2CAP, pairing) |
 | [guides/usb.md](guides/usb.md) | USB: gadget bulk throughput, NCM, storage |
+| [guides/protocols.md](guides/protocols.md) | **Throughput per protocol** (v3): CarPlay, Android Auto, USB audio / video / HID / serial / networking, Miracast, VoIP, streaming over USB and WiFi |

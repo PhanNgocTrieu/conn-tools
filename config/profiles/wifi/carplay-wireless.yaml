@@ -1,0 +1,67 @@
+# Wireless CarPlay over WiFi - traffic model
+#
+# Real wireless CarPlay: Bluetooth starts the session, then the iPhone joins the head unit's
+# 5 GHz access point; screen and audio run over AirPlay (TCP / UDP-RTP), control over iAP2
+# on TCP. CTT reproduces the load and timing of those streams on the board's WiFi; it does
+# not implement iAP2, AirPlay or the Apple authentication.
+#
+# Roles: board = head unit (CTT server, usually the WiFi AP), PC = phone (CTT client,
+# connected to the board's AP).   tx = phone -> head unit,  rx = head unit -> phone
+#
+# Run: ctt profile config/profiles/wifi/carplay-wireless.yaml --dut root@<board> --target-addr <board-wlan-ip>
+#      (add `wifi_iface: auto` to record signal / bitrate with every result)
+# Numbers are typical values - adjust to the product (display, codec bitrate, audio format).
+name: wifi-carplay-wireless
+defaults:
+  transport: tcp
+  duration: 60s
+  protocol: CarPlay (wireless, 5 GHz)
+  wifi_iface: auto
+  expect: {lost_max: 0}
+
+tests:
+  - name: session
+    notes: all streams of one wireless CarPlay session at the same time
+    parallel:
+      - name: screen-video
+        notes: H.264 screen ~12 Mbit/s at 60 fps
+        mode: tx
+        block: 1400
+        burst: 25K
+        burst_rate: 60
+        expect: {burst_on_time_pct_min: 98, burst_max_gap_ms_max: 150}
+      - name: main-audio
+        notes: media audio 48 kHz stereo, RTP-like datagrams every 10 ms
+        transport: udp
+        mode: tx
+        block: 960
+        burst: 1920
+        burst_rate: 100
+        expect: {burst_on_time_pct_min: 99, burst_max_gap_ms_max: 60, loss_pct_max: 1}
+      - name: siri-mic
+        notes: microphone to the phone, 16 kHz mono, 20 ms periods
+        transport: udp
+        mode: rx
+        block: 640
+        burst: 640
+        burst_rate: 50
+        expect: {burst_on_time_pct_min: 99, burst_max_gap_ms_max: 80, loss_pct_max: 1}
+      - name: touch-input
+        notes: touch / knob events to the phone, 120 Hz
+        mode: rx
+        block: 64
+        burst: 64
+        burst_rate: 120
+        expect: {burst_on_time_pct_min: 98, burst_max_gap_ms_max: 80}
+      - name: iap2-control
+        notes: control request/response over TCP
+        mode: echo
+        block: 128
+        echo_interval_ms: 50
+        expect: {rtt_p99_us_max: 30000}
+
+  - name: headroom
+    notes: WiFi capacity alone; should be well above the session's ~15 Mbit/s
+    mode: bidir
+    duration: 20s
+    expect: {up_mbps_min: 50, down_mbps_min: 50}

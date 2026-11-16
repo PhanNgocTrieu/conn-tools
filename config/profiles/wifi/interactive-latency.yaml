@@ -1,0 +1,32 @@
+# Interactive traffic over WiFi (remote control, gaming, telemetry) - latency
+#
+# Small messages at a fixed rate; the round trip and its tail (p99) matter, not the bitrate.
+name: wifi-interactive-latency
+defaults:
+  duration: 30s
+  protocol: Interactive / real time
+  wifi_iface: auto
+
+tests:
+  - name: udp-60hz
+    notes: 64-byte UDP messages at 60 Hz (game state, remote control)
+    transport: udp
+    mode: echo
+    block: 64
+    echo_interval_ms: 16
+    expect: {echo_loss_pct_max: 1, rtt_p99_us_max: 20000}
+  - name: tcp-request-response
+    notes: small TCP requests every 50 ms (control APIs)
+    transport: tcp
+    mode: echo
+    block: 256
+    echo_interval_ms: 50
+    expect: {rtt_p99_us_max: 30000}
+  - name: telemetry-10hz
+    notes: board -> PC telemetry, 512 B at 10 Hz
+    transport: udp
+    mode: rx
+    block: 512
+    burst: 512
+    burst_rate: 10
+    expect: {loss_pct_max: 1, burst_on_time_pct_min: 99}

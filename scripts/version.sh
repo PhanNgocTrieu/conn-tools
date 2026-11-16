@@ -1,14 +1,14 @@
 #!/bin/sh
-# One version for the whole tool: agent (CMakeLists.txt), Python apps (app/pyproject.toml, app/src/ctt/__init__.py).
+# One version for the whole tool: agent (linux-app/CMakeLists.txt), Python apps (window-app/pyproject.toml, window-app/src/ctt/__init__.py).
 #
 #   scripts/version.sh                 show the version of each place
 #   scripts/version.sh set 0.2.0       write 0.2.0 everywhere (then commit, tag v0.2.0)
 #   scripts/version.sh check 0.2.0     exit 1 if any place differs (used by CI on a v* tag)
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-CM=$ROOT/CMakeLists.txt
-PP=$ROOT/app/pyproject.toml
-PY=$ROOT/app/src/ctt/__init__.py
+CM=$ROOT/linux-app/CMakeLists.txt
+PP=$ROOT/window-app/pyproject.toml
+PY=$ROOT/window-app/src/ctt/__init__.py
 
 cmake_v() { sed -n 's/^project(connectivity-tools VERSION \([0-9.]*\).*/\1/p' "$CM"; }
 pyproj_v() { sed -n 's/^version = "\(.*\)"/\1/p' "$PP"; }
@@ -16,9 +16,9 @@ python_v() { sed -n 's/^__version__ = "\(.*\)"/\1/p' "$PY"; }
 
 case "${1:-show}" in
 show)
-    echo "CMakeLists.txt   board / Linux agent  $(cmake_v)"
-    echo "app/pyproject.toml  Python package   $(pyproj_v)"
-    echo "ctt/__init__.py  Python apps         $(python_v)"
+    echo "linux-app/CMakeLists.txt     ctt-agent (Linux, aarch)  $(cmake_v)"
+    echo "window-app/pyproject.toml  Python package   $(pyproj_v)"
+    echo "window-app/src/ctt/__init__.py  Python apps  $(python_v)"
     ;;
 set)
     v=${2:?usage: version.sh set X.Y.Z}

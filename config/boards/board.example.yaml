@@ -1,7 +1,7 @@
 # Board profile - EXAMPLE. CTT works without any profile on a board with the standard Linux stack
 # (systemd, BlueZ, configfs USB gadget, nl80211 WiFi). Write a profile only for what your
 # product adds. Copy to config/boards/board.private.yaml (git-ignored) or pass --board-profile FILE /
-# set CTT_BOARD_PROFILE. Every key is optional. Reference: app/src/ctt/platform/board.py
+# set CTT_BOARD_PROFILE. Every key is optional. Reference: window-app/src/ctt/platform/board.py
 name: my-board
 
 # systemd units shown by `ctt board status` and the app's Check board

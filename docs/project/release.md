@@ -6,14 +6,13 @@ GitHub Actions ([.github/workflows/btapp.yml](../../.github/workflows/btapp.yml)
 
 | File | Chạy trên | Ghi chú |
 |---|---|---|
-| `ctt-agent-aarch64` | Board Linux aarch64 | Static, đã strip. Chép lên board thành `/tmp/ctt-agent` rồi `chmod +x` |
-| `ctt-agent-x86_64` | Linux / WSL x86_64 | Static. Đổi tên thành `ctt-agent` nếu muốn |
-| `ctt-agent.exe` | Windows | App cửa sổ (GUI): pair, throughput có biểu đồ, terminal |
-| `ctt-agent-console.exe` | Windows | Console: menu và lệnh con, chạy được qua SSH |
-| `SHA256SUMS` | | Checksum của 4 file trên |
+| `ctt-agent-aarch.tar.gz` | Mọi board aarch64 | `ctt-agent-aarch/ctt-agent`: static, đã strip. Chép lên board thành `/tmp/ctt-agent` rồi `chmod +x` |
+| `ctt-agent-linux.tar.gz` | Linux / WSL x86_64 | `ctt-agent-linux/ctt-agent`: static |
+| `ctt-agent-window.zip` | Windows | `ctt-agent-window/ctt-agent.exe` (console: menu và lệnh con, chạy được qua SSH) và `ctt-agent-UI.exe` (app cửa sổ: pair, throughput có biểu đồ, terminal) |
+| `SHA256SUMS` | | Checksum của 3 gói trên |
 | Source code (zip / tar.gz) | | GitHub tự thêm vào mỗi release: toàn bộ source tại commit của tag |
 
-Ba file trên Linux và board cùng là chương trình `ctt-agent`. Tên file trên release mang thêm kiến trúc CPU vì một release không chứa được hai file trùng tên. Hai file `.exe` là app PC, khác với agent trên board.
+Chỉ có một chương trình tên `ctt-agent`; mỗi nền tảng một gói, giải nén ra thư mục cùng tên với gói (giống hệt `build/` khi tự build bằng `scripts/build.sh`).
 
 ## Hai loại release
 
@@ -24,7 +23,7 @@ Ba file trên Linux và board cùng là chương trình `ctt-agent`. Tên file t
 
 ## Tạo release `vX.Y.Z`
 
-Version nằm ở 3 chỗ: `CMakeLists.txt` (agent), `pyproject.toml` và `app/src/ctt/__init__.py` (app Windows). Script [scripts/version.sh](../../scripts/version.sh) đổi cả ba cùng lúc. CI **từ chối** tạo release nếu tag không khớp version trong source.
+Version nằm ở 3 chỗ: `linux-app/CMakeLists.txt` (agent), `pyproject.toml` và `window-app/src/ctt/__init__.py` (app Windows). Script [scripts/version.sh](../../scripts/version.sh) đổi cả ba cùng lúc. CI **từ chối** tạo release nếu tag không khớp version trong source.
 
 ```bash
 git checkout main && git pull
@@ -34,7 +33,7 @@ scripts/version.sh                 # xem version hiện tại
 scripts/version.sh set 0.2.0
 
 # 2. Build và test trên máy (khuyến nghị)
-scripts/build-all.sh               # agent WSL + test, agent board, 2 file exe
+scripts/build.sh --clean      # build/ctt-agent-linux (+ test), build/ctt-agent-aarch, build/ctt-agent-window
 
 # 3. Commit, tag, push
 git commit -am "Release 0.2.0"
@@ -65,28 +64,28 @@ Nếu CI báo `version mismatch: tag says …` thì chạy `scripts/version.sh s
 Trang Releases → chọn bản → mục **Assets**. Hoặc dùng link cố định:
 
 ```
-https://github.com/PhanNgocTrieu/conn-tools/releases/download/v0.2.0/ctt-agent-aarch64
-https://github.com/PhanNgocTrieu/conn-tools/releases/latest/download/ctt-agent-console.exe   # bản chính thức mới nhất
-https://github.com/PhanNgocTrieu/conn-tools/releases/download/latest-main/ctt-agent.exe       # bản mới nhất của main
+https://github.com/PhanNgocTrieu/conn-tools/releases/download/v0.2.0/ctt-agent-aarch.tar.gz
+https://github.com/PhanNgocTrieu/conn-tools/releases/latest/download/ctt-agent-window.zip        # bản chính thức mới nhất
+https://github.com/PhanNgocTrieu/conn-tools/releases/download/latest-main/ctt-agent-linux.tar.gz  # bản mới nhất của main
 ```
 
-Kiểm tra file không bị hỏng (để cả 5 file trong cùng thư mục):
+Kiểm tra file không bị hỏng (để các gói và SHA256SUMS trong cùng thư mục):
 
 ```bash
 sha256sum -c SHA256SUMS            # Linux / WSL: mỗi file in "OK"
 ```
 ```powershell
-Get-FileHash .\ctt-agent-console.exe -Algorithm SHA256   # Windows: so với dòng tương ứng trong SHA256SUMS
+Get-FileHash .\ctt-agent-window.zip -Algorithm SHA256   # Windows: so với dòng tương ứng trong SHA256SUMS
 ```
 
 Kiểm tra version:
 
 ```sh
 /tmp/ctt-agent version             # board:   ctt-agent 0.2.0 (CTP v1, aarch64)
-ctt-agent-console.exe --version    # Windows: ctt-agent-console 0.2.0
+ctt-agent.exe --version    # Windows: ctt-agent 0.2.0
 ```
 
-`ctt-agent.exe` hiện version ở tiêu đề cửa sổ (`CTT Bluetooth Test 0.2.0`).
+`ctt-agent-UI.exe` hiện version ở tiêu đề cửa sổ (`CTT Bluetooth Test 0.2.0`).
 
 ## Đưa bản release vào Yocto (máy build công ty)
 

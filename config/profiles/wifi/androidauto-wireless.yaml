@@ -1,0 +1,55 @@
+# Wireless Android Auto over WiFi - traffic model
+#
+# Real wireless Android Auto: Bluetooth (RFCOMM) exchanges the WiFi credentials, the phone
+# joins the head unit's 5 GHz network and ALL channels run over one TCP connection
+# (video, audio, input, sensors, control multiplexed). CTT reproduces each channel's load
+# as its own TCP stream, at the same time.
+#
+# Roles: board = head unit (CTT server), PC = phone (CTT client).
+#   tx = phone -> head unit,  rx = head unit -> phone
+#
+# Run: ctt profile config/profiles/wifi/androidauto-wireless.yaml --dut root@<board> --target-addr <board-wlan-ip>
+name: wifi-androidauto-wireless
+defaults:
+  transport: tcp
+  duration: 60s
+  protocol: Android Auto (wireless, 5 GHz)
+  wifi_iface: auto
+  expect: {lost_max: 0}
+
+tests:
+  - name: session
+    parallel:
+      - name: projection-video
+        notes: H.264 projection ~8 Mbit/s at 30 fps (1080p30 class)
+        mode: tx
+        block: 1400
+        burst: 33K
+        burst_rate: 30
+        expect: {burst_on_time_pct_min: 98, burst_max_gap_ms_max: 150}
+      - name: media-audio
+        notes: 48 kHz stereo audio in 10 ms packets
+        mode: tx
+        block: 1920
+        burst: 1920
+        burst_rate: 100
+        expect: {burst_on_time_pct_min: 99, burst_max_gap_ms_max: 60}
+      - name: voice-mic
+        notes: microphone to the phone, 16 kHz mono
+        mode: rx
+        block: 640
+        burst: 640
+        burst_rate: 50
+        expect: {burst_on_time_pct_min: 99, burst_max_gap_ms_max: 80}
+      - name: input-sensors
+        notes: touch events and car sensors, 100 Hz
+        mode: rx
+        block: 128
+        burst: 128
+        burst_rate: 100
+        expect: {burst_on_time_pct_min: 98, burst_max_gap_ms_max: 80}
+      - name: control
+        mode: echo
+        block: 128
+        echo_interval_ms: 50
+        expect: {rtt_p99_us_max: 30000}

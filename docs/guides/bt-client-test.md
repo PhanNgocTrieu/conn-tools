@@ -19,11 +19,11 @@ Quy ước trong tài liệu này:
 ## Bước 0: Build trên máy của bạn (WSL)
 
 ```bash
-scripts/build-dut.sh --generic --static --strip    # -> build/dut/agent/ctt-agent (aarch64, static, ~2.3 MB)
-scripts/build-windows.sh console                   # -> output/vX.Y.Z/windows/ctt-agent-console.exe (lần đầu tự cài Python)
+scripts/build.sh aarch    # -> build/ctt-agent-aarch/ctt-agent (aarch64, static, ~2.3 MB)
+scripts/build.sh window   # -> build/ctt-agent-window/ctt-agent.exe + ctt-agent-UI.exe (lần đầu tự cài Python)
 ```
 
-Hoặc không build: tải `ctt-agent-aarch64` và `ctt-agent-console.exe` (thêm `ctt-agent.exe` nếu dùng GUI) từ GitHub Releases, xem [release.md](../project/release.md).
+Hoặc không build: tải `ctt-agent-aarch.tar.gz` (board) và `ctt-agent-window.zip` (PC: `ctt-agent.exe`, thêm `ctt-agent-UI.exe` nếu dùng GUI) từ GitHub Releases, xem [release.md](../project/release.md).
 
 **Xong khi** có đủ 2 file trên.
 
@@ -62,14 +62,14 @@ bluetoothctl devices Paired                   # các bond đang có; xóa bớt:
 ## Bước 3: Chuẩn bị Client PC
 
 1. Bật OpenSSH Server trên Client PC (Settings → Optional features → OpenSSH Server).
-2. Chép `ctt-agent-console.exe` sang Client PC.
+2. Chép `ctt-agent.exe` sang Client PC.
 3. Cắm dongle Bluetooth vào Client PC. Dongle phải do Windows quản lý.
 4. Từ Local PC:
    ```
-   ssh <user>@<client-pc> ctt-agent-console.exe --version
+   ssh <user>@<client-pc> ctt-agent.exe --version
    ```
 
-**Xong khi** lệnh trên in ra `ctt-agent-console 0.1.0`. Đây là TC-01.
+**Xong khi** lệnh trên in ra `ctt-agent 0.1.0`. Đây là TC-01.
 
 ## Bước 4: Pair (TC-04, TC-05)
 
@@ -79,10 +79,10 @@ bluetoothctl devices Paired                   # các bond đang có; xóa bớt:
 |---|---|---|
 | 1 | `power on`, `agent NoInputNoOutput`, `default-agent` | |
 | 2 | `pairable on`, `discoverable on` | |
-| 3 | | `ctt-agent-console.exe scan` → thấy `<ADDR>` |
-| 4 | | `ctt-agent-console.exe pair <ADDR>` |
+| 3 | | `ctt-agent.exe scan` → thấy `<ADDR>` |
+| 4 | | `ctt-agent.exe pair <ADDR>` |
 | 5 | Khi hiện `Confirm passkey … (yes/no)`: gõ `yes` | |
-| 6 | | `ctt-agent-console.exe paired` → có `<ADDR>` |
+| 6 | | `ctt-agent.exe paired` → có `<ADDR>` |
 
 **Xong khi** PC báo `Pairing successful`, và mã 6 số (nếu có) trùng với mã board in ra.
 
@@ -96,7 +96,7 @@ Mục đích là nhìn tận mắt dữ liệu đi đúng cả hai chiều.
 ```
 `--text` cho người đọc: dòng gõ trên UART được gửi đi dạng chữ, `/hex 00 ff` gửi byte thô, và dữ liệu nhận được in cả chữ lẫn hex kèm tổng byte.
 
-**Client PC** (SSH): chạy `ctt-agent-console.exe`, vào menu **1** (Settings), trả lời `SSH to the board?` = `n`, nhập `<ADDR>` và channel `22`, rồi vào menu **9** (Terminal: send / receive data).
+**Client PC** (SSH): chạy `ctt-agent.exe`, vào menu **1** (Settings), trả lời `SSH to the board?` = `n`, nhập `<ADDR>` và channel `22`, rồi vào menu **9** (Terminal: send / receive data).
 
 | Thử | Làm | Mong đợi |
 |---|---|---|
@@ -105,7 +105,7 @@ Mục đích là nhìn tận mắt dữ liệu đi đúng cả hai chiều.
 | Board → PC | Trên UART gõ `hi PC` rồi Enter | UART: `board tx 6 B (total tx 6 B): "hi PC\n"`. Console: `[PC rx 6 B, total 6 B] b'hi PC\n'` |
 | Nhị phân | `/hex 00 ff 55 aa 0d 0a` | UART: `board rx 6 B (…): "\x00\xffU\xaa\r\n"   hex 00 ff 55 aa 0d 0a`, đúng 6 byte |
 
-Bản đầy đủ (kể cả với GUI `ctt-agent.exe`): [bt-test-cases.md](bt-test-cases.md) mục 2.
+Bản đầy đủ (kể cả với GUI `ctt-agent-UI.exe`): [bt-test-cases.md](bt-test-cases.md) mục 2.
 
 Thoát bằng `/quit` (console) và Ctrl+C (UART).
 
@@ -118,7 +118,7 @@ Thoát bằng `/quit` (console) và Ctrl+C (UART).
 
 **Client PC** (SSH): chạy cả bộ BT-TP-01…06 với ngưỡng **target** (mục tiêu sản phẩm), mất khoảng 3 phút:
 ```
-ctt-agent-console.exe suite --addr <ADDR> --channel 22 -l target
+ctt-agent.exe suite --addr <ADDR> --channel 22 -l target
 ```
 
 | Case | Đo | Ngưỡng `target` |
@@ -170,8 +170,8 @@ Mọi case cũng phải có mất gói 0, lỗi CRC 0. Giải thích ngưỡng v
 
 Chạy riêng từng case:
 ```
-ctt-agent-console.exe suite --addr <ADDR> --channel 22 -l target --only BT-TP-01
-ctt-agent-console.exe run   --addr <ADDR> --channel 22 -m tx -d 30 --min-up 1.0 --json > tx.json
+ctt-agent.exe suite --addr <ADDR> --channel 22 -l target --only BT-TP-01
+ctt-agent.exe run   --addr <ADDR> --channel 22 -m tx -d 30 --min-up 1.0 --json > tx.json
 ```
 
 **Xong khi** bảng tổng kết in `6/6 PASS` (exit code 0). Báo cáo nằm ở `ctt-results/suite-target-*.json` và `.csv` trên Client PC; chép về bằng `scp <user>@<client-pc>:ctt-results/* .`. Ghi số vào bảng ở cuối [bt-test-cases.md](bt-test-cases.md).
@@ -200,11 +200,11 @@ Muốn đo kỹ hơn thì chạy tiếp:
 
 | Hiện tượng | Nguyên nhân / cách xử lý |
 |---|---|
-| `ctt-agent: not found` / `Exec format error` | Chép sai file, hoặc chưa `chmod +x`. Phải là bản `build/dut` (aarch64), không phải `build/host` |
+| `ctt-agent: not found` / `Exec format error` | Chép sai file, hoặc chưa `chmod +x`. Phải là bản `build/ctt-agent-aarch` (aarch64), không phải `build/ctt-agent-linux` |
 | `RFCOMM socket: … (kernel built without CONFIG_BT_RFCOMM?)` | Kernel không có RFCOMM: xem [yocto-recipe.md](../project/yocto-recipe.md) bước 5 |
 | `rfcomm listen …/22: Address already in use` | Channel 22 đang bận (có thể `ctt-agent-bt.service` đang chạy). `systemctl stop ctt-agent-bt`, hoặc thử `-e /23` và dùng `--channel 23` ở PC |
 | Scan không thấy board | Chưa `set-discoverable true`, hoặc `hci0` đang DOWN |
 | Pair lỗi vì đủ số bond | Trên board: `bluetoothctl devices Paired`, rồi `bluetoothctl remove <addr>` |
 | `RFCOMM connect … [WinError 10060/10064]` | Chưa pair, sai channel, hoặc chưa chạy `ctt-agent server` / `pipe` trên board |
 | `bad CTP magic` khi `run` | Board đang chạy `pipe` chứ không phải `server` |
-| SSH vào Client PC chạy `.exe` không ra gì | Phải dùng `ctt-agent-console.exe`. `ctt-agent.exe` là app cửa sổ, chạy qua SSH sẽ không hiện |
+| SSH vào Client PC chạy `.exe` không ra gì | Phải dùng `ctt-agent.exe`. `ctt-agent-UI.exe` là app cửa sổ, chạy qua SSH sẽ không hiện |

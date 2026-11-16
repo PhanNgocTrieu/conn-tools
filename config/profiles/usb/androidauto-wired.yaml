@@ -1,0 +1,76 @@
+# Wired Android Auto over USB - traffic model
+#
+# Real Android Auto (wired): the head unit switches the phone into Android Open Accessory
+# (AOA) mode and all channels (video, audio, input, sensors, control) are multiplexed over
+# ONE pair of USB bulk endpoints. CTT does not implement AOA or the Android Auto protocol;
+# it reproduces each channel's load and timing over USB bulk, one channel at a time (a bulk
+# pipe has no parallel streams), plus the link capacity.
+#
+# Roles here: board = head unit side of the bulk pipe (CTT server, USB gadget),
+# PC = phone side (CTT client).   tx = phone -> head unit,  rx = head unit -> phone
+#
+# Setup:   ctt usb gadget up --dut root@<board>     (attach 1d6b:0104 to the PC / WSL)
+# Run:     ctt profile config/profiles/usb/androidauto-wired.yaml --dut root@<board>
+#
+# Numbers are typical values (720p/1080p projection, 48 kHz audio) - adjust to the product.
+name: usb-androidauto-wired
+defaults:
+  transport: usb
+  duration: 30s
+  protocol: Android Auto (wired, AOA bulk)
+  expect: {lost_max: 0}
+
+tests:
+  - name: projection-video
+    notes: H.264 projection, ~8 Mbit/s at 30 fps (1080p30 class)
+    mode: tx
+    block: 16K
+    burst: 33K
+    burst_rate: 30
+    expect: {burst_on_time_pct_min: 99, burst_max_gap_ms_max: 100}
+  - name: projection-video-60fps
+    notes: smoother projection, ~12 Mbit/s at 60 fps
+    mode: tx
+    block: 16K
+    burst: 25K
+    burst_rate: 60
+    expect: {burst_on_time_pct_min: 99, burst_max_gap_ms_max: 50}
+  - name: media-audio
+    notes: media audio 48 kHz 16-bit stereo (1.536 Mbit/s), 10 ms packets
+    mode: tx
+    block: 1920
+    burst: 1920
+    burst_rate: 100
+    expect: {burst_on_time_pct_min: 99.5, burst_max_gap_ms_max: 40}
+  - name: guidance-audio
+    notes: navigation prompts 16 kHz mono, 20 ms packets
+    mode: tx
+    block: 640
+    burst: 640
+    burst_rate: 50
+    expect: {burst_on_time_pct_min: 99.5, burst_max_gap_ms_max: 60}
+  - name: voice-mic
+    notes: microphone to the phone (assistant, calls), 16 kHz mono
+    mode: rx
+    block: 640
+    burst: 640
+    burst_rate: 50
+    expect: {burst_on_time_pct_min: 99.5, burst_max_gap_ms_max: 60}
+  - name: input-sensors
+    notes: touch events and car sensor data to the phone, 100 Hz small messages
+    mode: rx
+    block: 128
+    burst: 128
+    burst_rate: 100
+    expect: {burst_on_time_pct_min: 99, burst_max_gap_ms_max: 50}
+  - name: control-latency
+    notes: control channel request/response
+    mode: echo
+    block: 128
+    duration: 15s
+    expect: {rtt_p99_us_max: 10000}
+  - name: capacity
+    notes: bulk capacity both ways; should be several times the ~14 Mbit/s of all channels
+    mode: bidir
+    duration: 20s
+    expect: {up_mbps_min: 50, down_mbps_min: 50}

@@ -33,7 +33,7 @@ Chạy ở máy có repo connectivity-tools, rồi mang thư mục kết quả v
 
 ```bash
 cd connectivity-tools
-scripts/export-recipe.sh <layer>/recipes-connectivity/ctt-agent    # hoặc không đối số: output/reports/ctt-agent-recipe
+scripts/export-recipe.sh <layer>/recipes-connectivity/ctt-agent    # hoặc không đối số: build/reports/ctt-agent-recipe
 ```
 
 Kết quả:
@@ -44,17 +44,17 @@ Kết quả:
 └── files/
     ├── ctt-agent-bt.service          # server RFCOMM channel 22 (tắt sẵn)
     ├── ctt-agent-ble.service         # server BLE GATT (tắt sẵn)
-    └── ctt-agent/                    # source C++ (~350 KB)
+    └── ctt-agent/                    # source C++ của linux-app/ (~350 KB)
         ├── CMakeLists.txt
         ├── SOURCE-COMMIT             # commit connectivity-tools đã dùng
-        ├── agent/{CMakeLists.txt, include/, src/}
-        └── agent/scripts/dut-usb-gadget.sh # cài thành /usr/bin/ctt-usb-gadget
+        ├── include/  src/
+        └── scripts/dut-usb-gadget.sh # cài thành /usr/bin/ctt-usb-gadget
 ```
 
 Script chỉ chép file, không build:
 - chép source vào `files/ctt-agent/` (xóa bản cũ trước) và chép các file service;
 - ghi commit vào `SOURCE-COMMIT` (thêm `-dirty` nếu lúc chép có sửa đổi chưa commit);
-- thư mục chưa có `.bb` thì chép recipe mẫu [packaging/yocto/recipe-local-src/ctt-agent.bb](../../packaging/yocto/recipe-local-src/ctt-agent.bb). Đã có `.bb` thì không ghi đè, chỉ cập nhật dòng `PV` theo version trong `CMakeLists.txt`.
+- thư mục chưa có `.bb` thì chép recipe mẫu [packaging/yocto/recipe-local-src/ctt-agent.bb](../../packaging/yocto/recipe-local-src/ctt-agent.bb). Đã có `.bb` thì không ghi đè, chỉ cập nhật dòng `PV` theo version trong `linux-app/CMakeLists.txt`.
 
 Recipe mẫu:
 
@@ -68,7 +68,7 @@ SRC_URI = " \
     file://ctt-agent-bt.service \
     file://ctt-agent-ble.service \
 "
-PV = "1.0.0"   # = version in CMakeLists.txt; export-recipe.sh keeps it equal
+PV = "3.0.0"   # = version in linux-app/CMakeLists.txt; export-recipe.sh keeps it equal
 S = "${WORKDIR}/ctt-agent"
 
 inherit cmake systemd features_check
@@ -186,8 +186,8 @@ journalctl -f -u ctt-agent-bt             # trace mỗi giây trong lúc test: �
 Từ PC:
 
 ```
-ctt-agent-console.exe run --addr <địa chỉ BT của board> --channel 22 -m tx -d 10
-ctt-agent-console.exe suite --addr <địa chỉ BT của board> --link ble-gatt
+ctt-agent.exe run --addr <địa chỉ BT của board> --channel 22 -m tx -d 10
+ctt-agent.exe suite --addr <địa chỉ BT của board> --link ble-gatt
 ```
 
 ## 8. Lỗi thường gặp

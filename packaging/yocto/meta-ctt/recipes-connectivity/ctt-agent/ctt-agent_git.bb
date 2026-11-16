@@ -16,10 +16,11 @@ SRC_URI = "${CTT_GIT_URI}"
 SRCREV ??= "${AUTOREV}"
 PV = "0.1+git${SRCPV}"
 S = "${WORKDIR}/git"
+OECMAKE_SOURCEPATH = "${S}/linux-app"   # the C++ agent; the rest of the repository is not built
 
 inherit cmake systemd
 
-# ctt-agent-bt.service: RFCOMM server on channel 22 for ctt-agent.exe / ctt-agent-console.exe when the
+# ctt-agent-bt.service: RFCOMM server on channel 22 for ctt-agent-UI.exe / ctt-agent.exe when the
 # PC has no SSH access to the board. Installed but disabled by default; enable it
 # in a test image with  SYSTEMD_AUTO_ENABLE:${PN} = "enable"  (bbappend/local.conf).
 SYSTEMD_SERVICE:${PN} = "ctt-agent-bt.service ctt-agent-ble.service"

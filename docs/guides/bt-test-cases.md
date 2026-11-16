@@ -4,16 +4,16 @@ Tài liệu này dùng cho **3 thành phần** test cùng nhau:
 
 | Thành phần | Chạy ở đâu | Là gì |
 |---|---|---|
-| **Board terminal** | UART của board | `ctt-agent` (bản `ctt-agent-aarch64` trên release). Chạy `pipe --text` (gửi/nhận dữ liệu thô) hoặc `server` (đo throughput) |
-| **PC remote terminal** | Client PC, SSH vào từ máy của bạn | `ctt-agent-console.exe`: menu và lệnh con, chạy được qua SSH |
-| **PC GUI** | Client PC, ngồi trực tiếp hoặc Remote Desktop | `ctt-agent.exe`: app cửa sổ (tab Connect / Throughput / Terminal) |
+| **Board terminal** | UART của board | `ctt-agent` (gói `ctt-agent-aarch.tar.gz` trên release). Chạy `pipe --text` (gửi/nhận dữ liệu thô) hoặc `server` (đo throughput) |
+| **PC remote terminal** | Client PC, SSH vào từ máy của bạn | `ctt-agent.exe`: menu và lệnh con, chạy được qua SSH |
+| **PC GUI** | Client PC, ngồi trực tiếp hoặc Remote Desktop | `ctt-agent-UI.exe`: app cửa sổ (tab Connect / Throughput / Terminal) |
 
 Ghép thành **2 tổ hợp**. Mỗi test case ghi bước và kết quả mong đợi cho cả hai:
 
 | Tổ hợp | Board | PC |
 |---|---|---|
-| **A** | Board terminal (UART) | PC remote terminal: `ctt-agent-console.exe` qua SSH |
-| **B** | Board terminal (UART) | PC GUI: `ctt-agent.exe` |
+| **A** | Board terminal (UART) | PC remote terminal: `ctt-agent.exe` qua SSH |
+| **B** | Board terminal (UART) | PC GUI: `ctt-agent-UI.exe` |
 
 PC **không SSH vào board**. Mọi thứ phía board đều làm bằng tay trên UART, và mọi số liệu phía board đọc trên UART.
 
@@ -33,10 +33,10 @@ Quy ước:
 
 | | |
 |---|---|
-| Làm | Tải từ GitHub Releases (bản `vX.Y.Z` hoặc `latest-main`): `ctt-agent-aarch64` cho board, `ctt-agent.exe` và `ctt-agent-console.exe` cho Client PC. Kiểm tra bằng `sha256sum -c SHA256SUMS` (xem [release.md](../project/release.md)) |
-| Board (UART) | Chép `ctt-agent-aarch64` vào `/tmp/ctt-agent` (USB stick, xem [bt-client-test.md](bt-client-test.md) bước 1), rồi `chmod +x /tmp/ctt-agent && /tmp/ctt-agent version` |
-| PC | `ctt-agent-console.exe --version`. Với GUI thì xem tiêu đề cửa sổ |
-| Mong đợi | Board: `ctt-agent X.Y.Z (CTP v1, aarch64)`. PC: `ctt-agent-console X.Y.Z`; tiêu đề cửa sổ `CTT Bluetooth Test X.Y.Z`. **Ba số version phải giống nhau** |
+| Làm | Tải từ GitHub Releases (bản `vX.Y.Z` hoặc `latest-main`): `ctt-agent-aarch.tar.gz` cho board, `ctt-agent-window.zip` (`ctt-agent.exe`, `ctt-agent-UI.exe`) cho Client PC. Kiểm tra bằng `sha256sum -c SHA256SUMS` (xem [release.md](../project/release.md)) |
+| Board (UART) | Chép `ctt-agent-aarch/ctt-agent` vào `/tmp/ctt-agent` (USB stick, xem [bt-client-test.md](bt-client-test.md) bước 1), rồi `chmod +x /tmp/ctt-agent && /tmp/ctt-agent version` |
+| PC | `ctt-agent.exe --version`. Với GUI thì xem tiêu đề cửa sổ |
+| Mong đợi | Board: `ctt-agent X.Y.Z (CTP v1, aarch64)`. PC: `ctt-agent X.Y.Z`; tiêu đề cửa sổ `CTT Bluetooth Test X.Y.Z`. **Ba số version phải giống nhau** |
 
 ### P-02: Bluetooth trên board
 
@@ -49,7 +49,7 @@ Quy ước:
 
 | | |
 |---|---|
-| A (console) | `ctt-agent-console.exe` → (1) Settings → `SSH to the board?` = `n` → `Board BT address` = `<ADDR>` (hoặc để trống rồi chọn ở TC-04) → `RFCOMM channel on the board` = `22` |
+| A (console) | `ctt-agent.exe` → (1) Settings → `SSH to the board?` = `n` → `Board BT address` = `<ADDR>` (hoặc để trống rồi chọn ở TC-04) → `RFCOMM channel on the board` = `22` |
 | B (GUI) | Tab **1. Connect** → tick **No SSH (agent already runs as a service, channel 22)** → ô **Board BT address** = `<ADDR>`, **RFCOMM channel** = `22` |
 | Mong đợi | Dòng đầu (console) / dòng đầu Log (GUI): `PC Bluetooth: Windows (WinRT): OK`. Không có `this Python has no RFCOMM sockets!`. Console: dòng `Board:` của menu hiện `<ADDR>` và channel 22 |
 
@@ -62,7 +62,7 @@ Quy ước:
 | | |
 |---|---|
 | Board (UART) | `bluetoothctl`, rồi `power on`, `agent NoInputNoOutput`, `default-agent`, `pairable on`, `discoverable on` (giữ phiên này mở). Board có daemon BT riêng: dùng công cụ của daemon đó |
-| A (console) | (4) Scan Bluetooth → chờ ~10 s → `Use one of them as the board?` = `y` → số thứ tự của board. Hoặc lệnh: `ctt-agent-console.exe scan` |
+| A (console) | (4) Scan Bluetooth → chờ ~10 s → `Use one of them as the board?` = `y` → số thứ tự của board. Hoặc lệnh: `ctt-agent.exe scan` |
 | B (GUI) | **Scan** → chờ 10–15 s → chọn board trong danh sách |
 | Mong đợi | Board có trong danh sách với đúng `<ADDR>`. Chọn board thì địa chỉ được điền vào Settings / ô **Board BT address** |
 
@@ -194,7 +194,7 @@ Trần lý thuyết của RFCOMM (goodput): 3-DH5 khoảng 2.1, 2-DH5 khoảng 1
 
 | | |
 |---|---|
-| A (console) | (8) Throughput / latency test → Direction `1` → Duration `30` → Block `990` → Rate `0` → CRC `y`. Hoặc: `ctt-agent-console.exe run --addr <ADDR> --channel 22 -m tx -d 30 --min-up 1.0` |
+| A (console) | (8) Throughput / latency test → Direction `1` → Duration `30` → Block `990` → Rate `0` → CRC `y`. Hoặc: `ctt-agent.exe run --addr <ADDR> --channel 22 -m tx -d 30 --min-up 1.0` |
 | B (GUI) | Tab **2. Throughput** → **PC → board**, Duration `30`, Block `990`, **Min Mbit/s (PASS)** = `1.0` (target) / `0.25` (baseline), tick **Verify CRC of every block** → **▶ Start** |
 | Theo dõi | Mỗi giây `sent` trên PC tăng, và `received` trên board tăng theo. Board ngừng in mà PC vẫn tăng `sent` nghĩa là dữ liệu bị nghẽn hoặc mất trên đường |
 | Mong đợi | PC: `data: PC sent X, board received X` (hai số **bằng nhau**), `lost 0  crc 0`, PC→board ≥ ngưỡng → `PASS`. Board: `session done: received X (N fr) … lost=0 crc_err=0`, với X giống PC. Ghi lại Mbit/s |
@@ -227,7 +227,7 @@ Trần lý thuyết của RFCOMM (goodput): 3-DH5 khoảng 2.1, 2-DH5 khoảng 1
 
 | | |
 |---|---|
-| A (console) | `ctt-agent-console.exe suite --addr <ADDR> --channel 22 -l target --only BT-TP-05,BT-TP-06`. Block khác: `run … -b 2048 --min-up …` |
+| A (console) | `ctt-agent.exe suite --addr <ADDR> --channel 22 -l target --only BT-TP-05,BT-TP-06`. Block khác: `run … -b 2048 --min-up …` |
 | B (GUI) | Như TC-10 / TC-11, Block `4096` (rồi `2048`, `8192`) |
 | Mong đợi | Mọi lần PASS. Trên Windows block gần như không ảnh hưởng (chênh dưới 0.1 Mbit/s, theo `report.md`). Block lớn **nhanh hơn rõ rệt** thì ghi lại, vì điều đó thay đổi kết luận về nút cổ chai |
 
@@ -235,7 +235,7 @@ Trần lý thuyết của RFCOMM (goodput): 3-DH5 khoảng 2.1, 2-DH5 khoảng 1
 
 | | |
 |---|---|
-| A (console) | `ctt-agent-console.exe suite --addr <ADDR> --channel 22` (level `measure`, khoảng 3 phút). Thêm `-l target` để chấm theo ngưỡng. Hoặc menu (10) → level → Enter |
+| A (console) | `ctt-agent.exe suite --addr <ADDR> --channel 22` (level `measure`, khoảng 3 phút). Thêm `-l target` để chấm theo ngưỡng. Hoặc menu (10) → level → Enter |
 | Theo dõi | Trước mỗi case in `[i/6] BT-TP-0x …`, rồi một dòng trace mỗi giây. Board in một `session from …` cho mỗi case. `-q` tắt trace |
 | Mong đợi | `measure`: bảng tổng kết kết thúc bằng `6/6 measured, data OK in 6`. Với `-l target`: `6/6 PASS`, và case FAIL ghi rõ ngưỡng không đạt, ví dụ `PC->board 0.420 >= 1 Mbit/s`. Báo cáo ở `ctt-results/suite-<level>-<thời điểm>.json` và `.csv` (có thêm cột min/max và số byte) |
 
@@ -291,7 +291,7 @@ Thiết kế và các link: [bt-ble.md](bt-ble.md). Nền tảng nào chạy lin
 
 | | |
 |---|---|
-| A (console) | `ctt-agent-console.exe caps` (hoặc menu 11) |
+| A (console) | `ctt-agent.exe caps` (hoặc menu 11) |
 | B (GUI) | Tab **1. Connect** → mục **Link** |
 | Mong đợi | Windows: `rfcomm yes`, `ble-gatt yes`, `ble-coc no … (Linux only)`. GUI: **BLE L2CAP CoC** bị làm mờ, có lý do bên dưới |
 
@@ -300,7 +300,7 @@ Thiết kế và các link: [bt-ble.md](bt-ble.md). Nền tảng nào chạy lin
 | | |
 |---|---|
 | Board (UART) | `$AGENT server -t gatt -J -i 1` (dừng `server` / `pipe` RFCOMM trước nếu muốn đọc trace dễ hơn; hai link chạy song song được) |
-| A (console) | `ctt-agent-console.exe ble-scan` |
+| A (console) | `ctt-agent.exe ble-scan` |
 | B (GUI) | Link **BLE GATT** → **Scan** |
 | Mong đợi | Board: dòng `listening` có `"service_uuid":"a0c70001-…"`, `"advertising":true`. PC thấy `CTT-<hostname>` với địa chỉ `<ADDR>`. Nếu `advertising` là `false` thì ghi lại `advertising_error` (có thể một daemon khác đang chiếm slot quảng bá), rồi thử kết nối thẳng bằng `<ADDR>` |
 
@@ -317,7 +317,7 @@ Thiết kế và các link: [bt-ble.md](bt-ble.md). Nền tảng nào chạy lin
 | | |
 |---|---|
 | Board (UART) | `$AGENT server -t gatt -i 1` (hoặc `systemctl start ctt-agent-ble` + `journalctl -f -u ctt-agent-ble`) |
-| A (console) | `ctt-agent-console.exe suite --addr <ADDR> --link ble-gatt`, hoặc từng lần: `run --addr <ADDR> --link ble-gatt -m tx -d 30 -b 244` |
+| A (console) | `ctt-agent.exe suite --addr <ADDR> --link ble-gatt`, hoặc từng lần: `run --addr <ADDR> --link ble-gatt -m tx -d 30 -b 244` |
 | B (GUI) | Link **BLE GATT**, tab **2. Throughput**, Block `244`, để trống Min Mbit/s → **▶ Start**, lần lượt cả 4 hướng |
 | Mong đợi | Trace hai bên mỗi giây như mục 3. `data: PC sent X, board received X`. `lost 0  crc 0`. Ghi lại Mbit/s từng chiều, RTT avg/p99, và ATT MTU (dòng `-J` của board: `att_mtu`) |
 
@@ -326,7 +326,7 @@ Thiết kế và các link: [bt-ble.md](bt-ble.md). Nền tảng nào chạy lin
 | | |
 |---|---|
 | Board (UART) | `$AGENT server -t l2cap -o type=le -i 1` (PSM 0x0080) |
-| PC Linux | `scripts/ctt-app suite --addr <ADDR> --link ble-coc` (cần `ctt-agent` cho PC: `build/host/agent/ctt-agent` hoặc `ctt-agent-x86_64` của release, đặt `CTT_HOST_AGENT`) |
+| PC Linux | `scripts/ctt-app suite --addr <ADDR> --link ble-coc` (cần `ctt-agent` cho PC: `build/ctt-agent-linux/ctt-agent` hoặc gói `ctt-agent-linux.tar.gz` của release, đặt `CTT_HOST_AGENT`) |
 | Mong đợi | 6 case `OK`. So với TC-24: CoC thường nhanh hơn GATT vì ít overhead hơn |
 
 ### TC-26: So sánh Classic và BLE
@@ -340,7 +340,7 @@ Thiết kế và các link: [bt-ble.md](bt-ble.md). Nền tảng nào chạy lin
 
 ## Bảng ghi kết quả
 
-Build: board `ctt-agent ……`, PC `ctt-agent-console ……` / `ctt-agent.exe ……`, ngày ……, người test ……
+Build: board `ctt-agent ……`, PC `ctt-agent ……` / `ctt-agent-UI.exe ……`, ngày ……, người test ……
 
 | TC | A: UART + console (SSH) | B: UART + GUI | Số đo / ghi chú |
 |---|---|---|---|

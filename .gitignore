@@ -1,6 +1,4 @@
 build/
-# release files per version (output/vX.Y.Z/...), test reports (output/reports/)
-output/
 compile_commands.json
 __pycache__/
 *.pyc

@@ -11,7 +11,7 @@ CTT đo BLE bằng **cùng giao thức CTP** và cùng các mode như Bluetooth 
 | `ble-coc` | BLE, L2CAP Credit-Based Channel (LE CoC) | `server -t l2cap -o type=le` | ✗ Windows không có API cho app | ✔ qua `ctt-agent pipe --binary` |
 
 **Nguyên tắc: mỗi nền tảng chạy cái nó hỗ trợ.** App tự dò khả năng của PC:
-- Console: `ctt-agent-console caps` hoặc menu **11**. Cột `no` có ghi lý do.
+- Console: `ctt-agent caps` hoặc menu **11**. Cột `no` có ghi lý do.
 - GUI: ở tab **1. Connect**, link nào PC không hỗ trợ thì bị làm mờ, kèm lý do bên dưới.
 
 ```
@@ -36,11 +36,11 @@ CtpClient (tx/rx/bidir/echo, trace, suite)              ctt-agent server  (cùng
    └─ ble-coc  : SocketBridge ⇄ ctt-agent pipe --binary ── L2CAP LE CoC ── l2cap transport (type=le)
 ```
 
-- **Phía PC** ([app/src/ctt/protocol/links.py](../../app/src/ctt/protocol/links.py)): `SocketBridge` biến một đường truyền theo gói thành một socket thường, nên `CtpClient` không phải sửa gì.
+- **Phía PC** ([window-app/src/ctt/protocol/links.py](../../window-app/src/ctt/protocol/links.py)): `SocketBridge` biến một đường truyền theo gói thành một socket thường, nên `CtpClient` không phải sửa gì.
   - GATT: mỗi lần ghi tối đa ATT MTU − 3 byte.
   - LE CoC: Python không mở được socket L2CAP LE (không đặt được loại địa chỉ LE), nên app gọi `ctt-agent` của chính PC ở chế độ `pipe --binary`.
-- **Phía board, GATT** ([agent/src/transports/gatt.cpp](../../agent/src/transports/gatt.cpp)):
-  - Agent tự nói chuyện D-Bus với `bluetoothd` ([agent/src/dbus.cpp](../../agent/src/dbus.cpp)). Không dùng libdbus, nên agent vẫn là một file static.
+- **Phía board, GATT** ([linux-app/src/transports/gatt.cpp](../../linux-app/src/transports/gatt.cpp)):
+  - Agent tự nói chuyện D-Bus với `bluetoothd` ([linux-app/src/dbus.cpp](../../linux-app/src/dbus.cpp)). Không dùng libdbus, nên agent vẫn là một file static.
   - Agent đăng ký **một GATT service riêng của CTT** và một advertisement. GATT service của các daemon khác trên board vẫn giữ nguyên, agent không đụng tới.
   - Đường dữ liệu dùng `AcquireWrite` / `AcquireNotify`: BlueZ trao cho agent một socket cho mỗi chiều. Dữ liệu không đi qua D-Bus, nên không làm chậm phép đo.
 
@@ -80,7 +80,7 @@ Khi có lỗi:
 | | Console | GUI |
 |---|---|---|
 | Chọn link | `--link ble-gatt` / `--link ble-coc`, hoặc menu **1** → `Link` | Tab **1. Connect** → **Link** |
-| Tìm board | `ctt-agent-console ble-scan` (chỉ thiết bị có service CTT; `--all` để thấy tất cả), hoặc menu **4** khi link là BLE | **Scan** (khi link là BLE) |
+| Tìm board | `ctt-agent ble-scan` (chỉ thiết bị có service CTT; `--all` để thấy tất cả), hoặc menu **4** khi link là BLE | **Scan** (khi link là BLE) |
 | Đo | `run --addr <ADDR> --link ble-gatt -m tx -d 30 -b 244` | Tab **2. Throughput** như Classic |
 | Cả bộ | `suite --addr <ADDR> --link ble-gatt` → BLE-TP-01…06 | – |
 | Terminal | menu **9** khi link là BLE | Tab **3. Terminal** |
@@ -109,7 +109,7 @@ Tham khảo trần lý thuyết (goodput GATT, LE 1M PHY): khoảng 0.2–0.7 Mb
 
 ## 5. Kiểm tra đã làm (không cần radio)
 
-[app/tests/test_ble_links.py](../../app/tests/test_ble_links.py) dựng một **dbus-daemon riêng** và một BlueZ giả ([app/tests/fakes/fake_bluez.py](../../app/tests/fakes/fake_bluez.py)), rồi chạy `ctt-agent server -t gatt` thật trên đó. Test kiểm tra:
+[window-app/tests/test_ble_links.py](../../window-app/tests/test_ble_links.py) dựng một **dbus-daemon riêng** và một BlueZ giả ([window-app/tests/fakes/fake_bluez.py](../../window-app/tests/fakes/fake_bluez.py)), rồi chạy `ctt-agent server -t gatt` thật trên đó. Test kiểm tra:
 - **Đăng ký:** agent đăng ký được service và advertisement (`LocalName`, UUID), và đọc được characteristic `info`.
 - **Phiên đo:** BlueZ giả gọi `AcquireNotify` / `AcquireWrite` giống BlueZ thật (có truyền fd qua D-Bus). Cả 4 mode chạy qua đó với MTU 247, mỗi notification ≤ MTU − 3. Board nhận đúng số byte PC gửi, không mất, không lỗi CRC.
 - **Đường LE CoC:** `ctt-agent pipe --binary` + `SocketBridge` chạy được, test qua TCP.

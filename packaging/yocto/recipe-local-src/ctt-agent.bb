@@ -18,7 +18,7 @@ SRC_URI = " \
     file://ctt-agent-bt.service \
     file://ctt-agent-ble.service \
 "
-PV = "1.0.0"   # = version in CMakeLists.txt; export-recipe.sh keeps it equal
+PV = "3.0.0"   # = version in linux-app/CMakeLists.txt; export-recipe.sh keeps it equal
 S = "${WORKDIR}/ctt-agent"
 
 # =============================================================
@@ -33,7 +33,7 @@ EXTRA_OECMAKE = "-DCTT_BUILD_TESTS=OFF"
 # =============================================================
 # Service
 # =============================================================
-# RFCOMM server on channel 22 for ctt-bt / ctt-agent-console when the PC has no SSH to the board.
+# RFCOMM server on channel 22 for ctt-bt / ctt-agent when the PC has no SSH to the board.
 # Installed but disabled: enable it only in test images, e.g. in local.conf
 #   SYSTEMD_AUTO_ENABLE:pn-ctt-agent = "enable"
 SYSTEMD_SERVICE:${PN} = "ctt-agent-bt.service ctt-agent-ble.service"

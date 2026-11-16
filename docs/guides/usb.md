@@ -23,7 +23,7 @@ ctt usb gadget up --dut root@<ip>            # configfs gadget 1d6b:0104 + Funct
 #   .\scripts\dev\usbipd-attach.ps1 -HardwareId 1d6b:0104 -AutoAttach
 ctt usb list --side host                      # trong WSL phải thấy 1d6b:0104
 ctt run -t usb -m bidir -d 20s --dut root@<ip>
-ctt profile config/profiles/usb_bulk.yaml --dut root@<ip>
+ctt profile config/profiles/usb/bulk-raw.yaml --dut root@<ip>
 ctt usb gadget down --dut root@<ip>
 ```
 

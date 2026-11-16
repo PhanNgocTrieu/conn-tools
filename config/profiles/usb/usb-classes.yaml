@@ -1,0 +1,59 @@
+# Other USB device classes - traffic models over USB bulk
+#
+# Roles: board = USB device (CTT gadget), PC = USB host.
+#   tx = host -> device,  rx = device -> host
+#
+# Setup: ctt usb gadget up --dut root@<board>
+# Run:   ctt profile config/profiles/usb/usb-classes.yaml --dut root@<board>
+# Storage on the board as USB HOST (a stick plugged into the board): `ctt usb storage`.
+name: usb-classes
+defaults:
+  transport: usb
+  duration: 20s
+  expect: {lost_max: 0}
+
+tests:
+  # Mass storage / MTP: large sequential transfers - the raw capacity of the port
+  - name: msc-mtp-write
+    protocol: Mass Storage / MTP (bulk)
+    notes: file copy to the device, 512 KB transfers
+    mode: tx
+    block: 512K
+    expect: {up_mbps_min: 200}
+  - name: msc-mtp-read
+    protocol: Mass Storage / MTP (bulk)
+    notes: file copy from the device
+    mode: rx
+    block: 512K
+    expect: {down_mbps_min: 200}
+
+  # CDC-ACM (virtual serial port): small writes at a fixed baud rate; must not lose a byte
+  - name: cdc-acm-115200
+    protocol: CDC-ACM serial
+    notes: 115200 baud = 11.5 KB/s, 64-byte writes
+    mode: bidir
+    block: 64
+    rate: 92160
+  - name: cdc-acm-921600
+    protocol: CDC-ACM serial
+    notes: 921600 baud, 512-byte writes
+    mode: bidir
+    block: 512
+    rate: 737280
+
+  # HID: small input reports at the polling rate; latency matters
+  - name: hid-reports-1khz
+    protocol: HID
+    notes: 64-byte input reports every 1 ms (gaming / touch panels)
+    mode: rx
+    block: 64
+    burst: 64
+    burst_rate: 1000
+    expect: {burst_on_time_pct_min: 99.9, burst_max_gap_ms_max: 4}
+  - name: hid-latency
+    protocol: HID
+    notes: request/response latency of small reports (output report -> input report)
+    mode: echo
+    block: 64
+    echo_interval_ms: 1
+    expect: {rtt_p99_us_max: 3000}

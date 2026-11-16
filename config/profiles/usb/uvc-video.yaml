@@ -1,0 +1,44 @@
+# USB Video Class (UVC) - traffic model
+#
+# A UVC camera / capture device sends one video frame per frame period (device -> host).
+# Real devices use isochronous or bulk endpoints; CTT sends the same frame size per period
+# over USB bulk and measures frames on time, late frames (stutter) and the longest gap.
+#
+# Roles: board = video device (CTT gadget), PC = USB host.   rx = device -> host (video)
+#
+# Setup: ctt usb gadget up --dut root@<board>
+# Run:   ctt profile config/profiles/usb/uvc-video.yaml --dut root@<board>
+#
+# Frame sizes: uncompressed YUY2 = width x height x 2 B; MJPEG ~ 1/10 of that (scene
+# dependent); H.264 from the encoder bitrate. Uncompressed 720p30 and above need
+# SuperSpeed (USB 3) - on a High-Speed port (~40 MB/s usable) they are expected to fail.
+name: usb-video-class
+defaults:
+  transport: usb
+  duration: 30s
+  protocol: USB Video Class
+  mode: rx
+  block: 64K
+  expect: {lost_max: 0, burst_on_time_pct_min: 99}
+
+tests:
+  - name: h264-1080p30
+    notes: H.264 1080p30 at ~8 Mbit/s = ~33 KB per frame
+    burst: 33K
+    burst_rate: 30
+  - name: mjpeg-720p30
+    notes: MJPEG 1280x720 at 30 fps, ~64 KB per frame (~15 Mbit/s)
+    burst: 64K
+    burst_rate: 30
+  - name: mjpeg-1080p30
+    notes: MJPEG 1920x1080 at 30 fps, ~160 KB per frame (~39 Mbit/s)
+    burst: 160K
+    burst_rate: 30
+  - name: yuy2-480p30
+    notes: uncompressed 640x480 YUY2 at 30 fps = 600 KB per frame (147 Mbit/s), fits High-Speed
+    burst: 600K
+    burst_rate: 30
+  - name: yuy2-720p30
+    notes: uncompressed 1280x720 YUY2 at 30 fps = 1.76 MB per frame (442 Mbit/s), needs SuperSpeed
+    burst: 1800K
+    burst_rate: 30

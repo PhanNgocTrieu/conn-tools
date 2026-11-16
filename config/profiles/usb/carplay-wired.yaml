@@ -1,0 +1,69 @@
+# Wired CarPlay over USB - traffic model
+#
+# Real CarPlay: after a USB role switch the head unit (HU) becomes the USB device and the
+# iPhone the host; iAP2 (control) runs over a USB bulk interface and the media sessions
+# (screen, audio) run over IP on a USB NCM network interface. CTT does NOT implement iAP2,
+# the Apple authentication or AirPlay; it reproduces the same LOAD and TIMING on the same
+# link, so you see whether the board's USB / network path can carry a CarPlay session.
+#
+# Roles here: board = head unit (CTT server, USB gadget with NCM), PC = phone (CTT client).
+#   tx = phone -> head unit,  rx = head unit -> phone
+#
+# Setup:   ctt usb gadget up --ncm --dut root@<board>   (then give usb0 an IP on both ends)
+# Run:     ctt profile config/profiles/usb/carplay-wired.yaml --dut root@<board> --target-addr <board-usb0-ip>
+#
+# Numbers are typical engineering values, not taken from Apple's specification - adjust
+# them to your product (screen size, codec bitrate, audio format).
+name: usb-carplay-wired
+defaults:
+  transport: tcp
+  duration: 60s
+  protocol: CarPlay (wired, NCM)
+  expect: {lost_max: 0}
+
+tests:
+  - name: session
+    notes: all streams of one CarPlay session at the same time
+    parallel:
+      - name: screen-video
+        notes: H.264 screen stream, ~10 Mbit/s at 60 fps (1920x720 class display)
+        mode: tx
+        block: 1400
+        burst: 20K
+        burst_rate: 60
+        expect: {burst_on_time_pct_min: 99, burst_max_gap_ms_max: 100}
+      - name: main-audio
+        notes: media audio, 48 kHz 16-bit stereo PCM (1.536 Mbit/s) in 10 ms periods (2 datagrams, below the MTU)
+        transport: udp
+        mode: tx
+        block: 960
+        burst: 1920
+        burst_rate: 100
+        expect: {burst_on_time_pct_min: 99.5, burst_max_gap_ms_max: 40, loss_pct_max: 0.5}
+      - name: siri-mic
+        notes: microphone to the phone, 16 kHz 16-bit mono in 20 ms periods
+        transport: udp
+        mode: rx
+        block: 640
+        burst: 640
+        burst_rate: 50
+        expect: {burst_on_time_pct_min: 99.5, burst_max_gap_ms_max: 60, loss_pct_max: 0.5}
+      - name: touch-input
+        notes: touch / knob events to the phone, 120 Hz small messages
+        mode: rx
+        block: 64
+        burst: 64
+        burst_rate: 120
+        expect: {burst_on_time_pct_min: 99, burst_max_gap_ms_max: 50}
+      - name: iap2-control
+        notes: control request/response latency (iAP2-like messages)
+        mode: echo
+        block: 128
+        echo_interval_ms: 50
+        expect: {rtt_p99_us_max: 20000}
+
+  - name: headroom
+    notes: link capacity alone; should be well above the session's ~12 Mbit/s
+    mode: bidir
+    duration: 20s
+    expect: {up_mbps_min: 40, down_mbps_min: 40}

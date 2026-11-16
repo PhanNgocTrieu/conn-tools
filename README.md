@@ -36,6 +36,10 @@ Every test checks the sequence number and CRC of each block, and prints a live t
 - **Integrity is always checked.**
   - Every block carries a sequence number and a CRC32.
   - Results always report lost blocks, CRC errors and out-of-order blocks, next to Mbit/s and RTT (min / avg / p50 / p95 / p99 / max).
+- **Protocol traffic models (v3).**
+  - Burst streams (`--burst 20K --burst-rate 60`) reproduce video frames and audio periods. The receiver reports bursts on time, late bursts (stutter / dropouts) and the longest gap.
+  - Profiles run several streams at once (`parallel:`), so one test is a whole session.
+  - A catalogue of USB and WiFi protocols ships in [`config/profiles/`](config/profiles): CarPlay and Android Auto (wired and wireless), USB Audio / Video / HID / CDC-ACM / mass storage / NCM, Miracast, VoIP, adaptive streaming, file transfer, interactive latency. See [docs/guides/protocols.md](docs/guides/protocols.md).
 - **Live monitoring.**
   - Board and PC both print, once per second, the rate and the bytes/frames sent and received so far.
   - At the end, a `data:` line compares the totals of both ends.
@@ -44,7 +48,7 @@ Every test checks the sequence number and CRC of each block, and prints a live t
   - Level `measure` (default) only records the numbers. Levels `baseline` and `target` add PASS/FAIL on Mbit/s and RTT limits.
   - Limits can be overridden from a JSON file.
 - **Windows apps.**
-  - `ctt-agent.exe` is a desktop app. `ctt-agent-console.exe` has a menu and scriptable sub-commands, and also works over SSH.
+  - `ctt-agent-UI.exe` is a desktop app. `ctt-agent.exe` has a menu and scriptable sub-commands, and also works over SSH.
   - Both detect which links the PC supports.
 - **Dependency-free agent.**
   - `ctt-agent` is a single static C++17 binary that only uses kernel interfaces.
@@ -59,7 +63,7 @@ Every test checks the sequence number and CRC of each block, and prints a live t
 ```
         PC (Windows / Linux)                                    Board (Linux)
  ┌──────────────────────────────────┐                ┌──────────────────────────────┐
- │ ctt-agent.exe / -console.exe     │                │ ctt-agent (C++17, static)    │
+ │ ctt-agent-UI.exe / -console.exe     │                │ ctt-agent (C++17, static)    │
  │   CtpClient: tx/rx/bidir/echo    │    RFCOMM      │   server : CTP measurements  │
  │   live trace, suites, reports    │◄── BLE GATT ──►│   pipe   : raw data terminal │
  │ ctt (CLI): WiFi/BT/USB/I2C,      │    L2CAP LE    │   i2c, storage               │
@@ -97,14 +101,15 @@ Every test checks the sequence number and CRC of each block, and prints a live t
 ### Prebuilt binaries (recommended)
 
 Download from [Releases](https://github.com/PhanNgocTrieu/conn-tools/releases): `vX.Y.Z` for official releases, or `latest-main` for the latest commit on `main`.
+There is one program, **`ctt-agent`**, in one package per platform:
 
-| File | For |
-|---|---|
-| `ctt-agent-aarch64` | Linux aarch64 board: copy to `/tmp/ctt-agent` and `chmod +x` |
-| `ctt-agent-x86_64` | Linux x86_64 PC or board |
-| `ctt-agent.exe` | Windows desktop app |
-| `ctt-agent-console.exe` | Windows console app (also over SSH) |
-| `SHA256SUMS` | Verify the download: `sha256sum -c SHA256SUMS` |
+| Package | Contains | For |
+|---|---|---|
+| `ctt-agent-aarch.tar.gz` | `ctt-agent-aarch/ctt-agent` | every aarch64 board (static): copy to `/tmp/ctt-agent`, `chmod +x` |
+| `ctt-agent-linux.tar.gz` | `ctt-agent-linux/ctt-agent` | Linux / WSL PC (x86_64, static) |
+| `ctt-agent-window.zip` | `ctt-agent-window/ctt-agent.exe` | Windows console: menu + commands (also over SSH) |
+|  | `ctt-agent-window/ctt-agent-UI.exe` | Windows desktop window |
+| `SHA256SUMS` | | verify the download: `sha256sum -c SHA256SUMS` |
 
 ### Agent in the board image
 
@@ -114,7 +119,7 @@ A Yocto recipe and systemd services (disabled by default) are provided, see [doc
 
 ```bash
 scripts/dev/setup-wsl.sh --install   # Ubuntu / WSL packages (first time)
-scripts/build-all.sh               # every release file into output/v<version>/, with a build report
+scripts/build.sh                     # -> build/ctt-agent-linux/, build/ctt-agent-aarch/, build/ctt-agent-window/
 ```
 
 See [Development](#development) for details.
@@ -123,7 +128,7 @@ See [Development](#development) for details.
 
 ### 1. Desktop app on Windows (board reachable over SSH)
 
-1. Open `ctt-agent.exe`. On **1. Connect**: enter the board's SSH target → **Check board** → **Deploy agent** if needed → **Scan** → **Pair**.
+1. Open `ctt-agent-UI.exe`. On **1. Connect**: enter the board's SSH target → **Check board** → **Deploy agent** if needed → **Scan** → **Pair**.
 2. **2. Throughput**: choose a direction → **▶ Start**. Leave *Min Mbit/s* empty to only measure.
 3. **3. Terminal**: exchange raw data in both directions.
 
@@ -135,23 +140,37 @@ See [Development](#development) for details.
 ```
 ```bat
 :: on the PC (also over SSH)
-ctt-agent-console.exe caps                                      :: links this PC supports
-ctt-agent-console.exe suite --addr <BOARD_BT_ADDR> --channel 22 :: BT-TP-01..06, level measure
-ctt-agent-console.exe suite --addr <BOARD_BT_ADDR> --link ble-gatt
-ctt-agent-console.exe run   --addr <BOARD_BT_ADDR> --channel 22 -m bidir -d 30 --json > result.json
+ctt-agent.exe caps                                      :: links this PC supports
+ctt-agent.exe suite --addr <BOARD_BT_ADDR> --channel 22 :: BT-TP-01..06, level measure
+ctt-agent.exe suite --addr <BOARD_BT_ADDR> --link ble-gatt
+ctt-agent.exe run   --addr <BOARD_BT_ADDR> --channel 22 -m bidir -d 30 --json > result.json
 ```
 
 Run it without arguments to get the numbered menu. All commands: [docs/guides/bt-app.md](docs/guides/bt-app.md).
 
-### 3. `ctt` CLI (Linux / WSL): WiFi, Bluetooth, USB, I2C
+### 3. `ctt` automation CLI (Linux / WSL, from a checkout): WiFi, Bluetooth, USB, I2C
+
+Drives the board over SSH and writes HTML / JUnit reports; for test benches and CI. Answer a
+few questions once, then pick tests by name.
 
 ```bash
-export CTT_DUT=root@<board-ip>
-scripts/ctt deploy                                   # copy the agent to the board
-scripts/ctt board status                             # board state (according to the board profile)
-scripts/ctt run -t tcp -m bidir -d 30s               # a single test
-scripts/ctt profile config/profiles/wifi_tcp_throughput.yaml
-scripts/ctt selftest                                 # self-check over TCP loopback, no board needed
+alias ctt="$PWD/scripts/ctt"
+ctt                                  # menus (WiFi / USB / Bluetooth / Board)
+ctt setup                            # board SSH address, USB / WiFi data IPs -> ~/.config/ctt/settings.yaml
+ctt check                            # PC agent, SSH, board agent version, data IPs: what is missing and how to fix it
+ctt deploy                           # copy the agent to the board
+ctt test                             # the test catalogue (USB, WiFi, Bluetooth)
+ctt test carplay-wireless -d 10s     # run one by name; WiFi tests use wifi_addr, USB tests usb_addr
+```
+
+The full commands stay available for scripts and CI (the saved settings apply to them too;
+an option on the command line or `$CTT_DUT` wins over the file):
+
+```bash
+ctt board status                             # board state (according to the board profile)
+ctt run -t tcp -m bidir -d 30s               # a single test (--target-addr for another interface)
+ctt profile config/profiles/wifi/tcp-baseline.yaml --dut root@<board-ip>
+ctt selftest                                 # self-check over TCP loopback, no board needed
 ```
 
 ## Results and reports
@@ -170,7 +189,7 @@ scripts/ctt selftest                                 # self-check over TCP loopb
   - `baseline` / `target`: `PASS` / `FAIL` against limits.
 - **Output files:**
   - apps: `ctt-results/suite-<level>-<time>.json` and `.csv`;
-  - CLI: `output/reports/<time>_<name>/` with `report.html`, `junit.xml` and CSV/JSON. `ctt compare` checks a run against a baseline run.
+  - CLI: `build/reports/<time>_<name>/` with `report.html`, `junit.xml` and CSV/JSON. `ctt compare` checks a run against a baseline run.
 - **Exit codes:**
   - `0`: success;
   - `1`: failed checks;
@@ -216,6 +235,7 @@ commands:
 | Bluetooth test plan | [docs/guides/bt-test-plan.md](docs/guides/bt-test-plan.md) |
 | Bluetooth test cases (serial console + console / desktop app) | [docs/guides/bt-test-cases.md](docs/guides/bt-test-cases.md) |
 | Step by step on a board with a serial console only | [docs/guides/bt-client-test.md](docs/guides/bt-client-test.md) |
+| Throughput per protocol (CarPlay, Android Auto, USB audio / video, Miracast, VoIP…) | [docs/guides/protocols.md](docs/guides/protocols.md) |
 | WiFi, USB, I2C with the `ctt` CLI | [docs/guides/TESTING.md](docs/guides/TESTING.md), [docs/guides/usb.md](docs/guides/usb.md), [docs/guides/bluetooth.md](docs/guides/bluetooth.md) |
 | CTP protocol | [docs/project/ctp-spec.md](docs/project/ctp-spec.md) |
 | Yocto: recipe, services, kernel | [docs/project/yocto-recipe.md](docs/project/yocto-recipe.md) |
@@ -226,21 +246,34 @@ commands:
 
 ### Build
 
+One script builds everything; everything it produces is under `build/`:
+
+```
+build/
+├── ctt-agent-linux/ctt-agent        Linux / WSL PC, x86_64 (static)
+├── ctt-agent-aarch/ctt-agent        every aarch64 board (static)
+├── ctt-agent-window/ctt-agent.exe   Windows console
+│                    ctt-agent-UI.exe Windows desktop window
+├── reports/                         test reports of `ctt` (HTML, JUnit, CSV)
+├── SHA256SUMS
+└── .work/                           intermediate files (CMake trees, logs) - ignore
+```
+
 | Command | Result |
 |---|---|
-| `scripts/build-all.sh` | All release files into `output/v<version>/` (`linux-aarch64/`, `linux-x86_64/`, `windows/`), with `SHA256SUMS` and `BUILD-REPORT.txt`. Options: `--no-test`, `--no-windows` |
-| `scripts/build-host.sh` | Agent for this PC (`build/host`), then all tests (C++ and Python) |
-| `scripts/build-dut.sh --generic --static --strip` | aarch64 board agent (`build/dut`); `--sdk <env>` to use a Yocto SDK |
-| `scripts/build-windows.sh [all\|gui\|console]` | Both `.exe` from WSL into `output/v<version>/windows/`; installs Python 3.12 per user (winget) on first use |
-| `.\scripts\build-btapp.ps1` | Same, from PowerShell |
+| `scripts/build.sh` | all three; add `--clean` to delete `build/` first |
+| `scripts/build.sh linux` | Linux agent, then all tests (C++ unit, loopback, Python); `--no-test` skips them |
+| `scripts/build.sh aarch` | board agent with the generic cross compiler; `--sdk <env>` to use a Yocto SDK |
+| `scripts/build.sh window` | both `.exe` from WSL (installs Python 3.12 per user with winget on first use) |
+| `window-app\build.ps1` | the `.exe` from PowerShell on Windows |
 
 From a checkout, run the tools without installing anything: `scripts/ctt …` (CLI) and `scripts/ctt-app …` (Bluetooth app on Linux / WSL).
 
 ### Tests
 
 ```bash
-scripts/build-host.sh                        # CTest: C++ unit tests, loopback, all Python tests
-python3 -m unittest discover -s app/tests        # Python only
+scripts/build.sh linux                        # CTest: C++ unit tests, loopback, all Python tests
+python3 -m unittest discover -s window-app/tests        # Python only
 ```
 
 The tests run without hardware:
@@ -252,7 +285,7 @@ Set `CTT_BOARD_PROFILE=none` to keep local board profiles out of the tests.
 
 ### CI and releases
 
-[GitHub Actions](.github/workflows/btapp.yml) builds the host and board agents and both `.exe` files, runs the tests on Linux and Windows, and smoke-tests the executables.
+[GitHub Actions](.github/workflows/btapp.yml) builds the three packages, runs the tests on Linux and Windows, and smoke-tests the executables.
 - **A push to `main`** refreshes the `latest-main` pre-release.
 - **A `vX.Y.Z` tag** publishes a release. CI checks that the tag matches the version in the sources (`scripts/version.sh check`).
 
@@ -268,30 +301,23 @@ git push origin main vX.Y.Z
 Each top-level folder answers one question:
 
 ```
-agent/          What runs on the board?   C++17 agent with its own CMake project
+linux-app/      ctt-agent for Linux and aarch64 boards: C++17, its own CMake project
   include/ src/   CTP, transports (tcp, udp, rfcomm, l2cap, gatt, usb, unix), server / client / pipe,
                   minimal D-Bus client, i2c, storage
   tests/          unit tests, loopback test
   cmake/          cross toolchains
   scripts/        USB gadget helper (installed on the board as ctt-usb-gadget)
-app/            What runs on the PC?      Python package (src layout)
-  src/ctt/        protocol/ (CTP client, BLE links), btapp/ (desktop + console apps), bluetooth/,
-                  platform/ (board profile), interfaces/, testing/, reporting/, cli/, paths.py
+window-app/     ctt-agent.exe / ctt-agent-UI.exe for Windows: Python package (src layout)
+  src/ctt/        protocol/ (CTP client, BLE links), btapp/ (console + desktop apps), bluetooth/,
+                  platform/ (board profile), interfaces/, testing/, reporting/, cli/ (`ctt`), paths.py
   tests/          tests and fakes/ (bluetoothctl, BlueZ on D-Bus, agent, ssh)
-  pyproject.toml  requirements.txt
-packaging/      How is it shipped?
-  yocto/          meta-ctt layer (git) and recipe-local-src (source kept in your layer)
-  systemd/        ctt-agent-bt.service, ctt-agent-ble.service (used by both recipes)
-  windows/        PyInstaller entry points of ctt-agent.exe / ctt-agent-console.exe
-config/         What do users adjust?
-  boards/         board profiles (board.example.yaml; *.private.yaml stay local)
-  profiles/       YAML test profiles for `ctt profile`
-  i2c/            I2C test configuration example
-scripts/        What is automated?        build-*, version.sh, export-recipe.sh, ctt / ctt-app launchers
-  dev/            development environment (setup-wsl.sh, usbipd-attach.ps1)
+  packaging/      PyInstaller entry points;  build.ps1  pyproject.toml  requirements.txt
+config/         shared: boards/ (board profiles; *.private.yaml stay local), profiles/ (test
+                profiles: usb/, wifi/, bluetooth/), i2c/
+packaging/      shared board image files: yocto/ (meta-ctt layer, recipe-local-src), systemd/
+scripts/        build.sh, version.sh, export-recipe.sh, ctt / ctt-app launchers, dev/ (WSL setup)
 docs/           project/ (design, release, Yocto, environment), guides/ (test guides)
-output/         (not committed) v<version>/ release files, reports/ test reports
-build/          (not committed) CMake build trees, logs, PyInstaller work files
+build/          generated only (see Build), not committed
 ```
 
 ## Status and known limitations

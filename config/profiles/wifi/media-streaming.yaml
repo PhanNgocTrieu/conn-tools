@@ -1,0 +1,32 @@
+# Audio / video streaming over WiFi (HLS / DASH, music) - traffic model
+#
+# Adaptive streaming players download one SEGMENT every few seconds over TCP (HTTP). The
+# player stalls when a segment arrives later than the playback needs it, so the burst
+# model sends one segment per segment period: on-time % below 100 means rebuffering.
+#
+# Roles: rx = board -> PC, i.e. the board serves the media and the PC plays it.
+# For the board as the PLAYER (it downloads), add `server_side: host` to the defaults and
+# set `target_addr` to the PC's IP: the server (media source) then runs on the PC.
+name: wifi-media-streaming
+defaults:
+  transport: tcp
+  mode: rx
+  block: 64K
+  duration: 60s
+  protocol: HTTP adaptive streaming
+  wifi_iface: auto
+  expect: {lost_max: 0, burst_on_time_pct_min: 100}
+
+tests:
+  - name: video-hd-5mbps
+    notes: 1080p ~5 Mbit/s, 4-second segments = 2.5 MB every 4 s
+    burst: 2500K
+    burst_rate: 0.25
+  - name: video-4k-25mbps
+    notes: 4K HDR ~25 Mbit/s, 4-second segments = 12.5 MB every 4 s
+    burst: 12500K
+    burst_rate: 0.25
+  - name: music-320kbps
+    notes: music streaming 320 kbit/s, 10-second chunks = 400 KB every 10 s
+    burst: 400K
+    burst_rate: 0.1

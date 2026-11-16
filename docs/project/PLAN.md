@@ -85,8 +85,7 @@ Chạy hoàn toàn trên DUT qua `/dev/i2c-N` (ioctl `I2C_RDWR`):
 
 ```
 connectivity-tools/
-├── CMakeLists.txt
-├── agent/                     # C++17 — build cho cả host và DUT
+├── linux-app/                     # C++17 — build cho cả host và DUT (CMakeLists.txt)
 │   ├── include/ctt/           # ctp.hpp, transport.hpp, metrics.hpp
 │   ├── src/ctp/               # codec, crc, prbs
 │   ├── src/transports/        # tcp.cpp udp.cpp rfcomm.cpp l2cap.cpp usb_ffs.cpp usb_libusb.cpp i2c.cpp
@@ -101,7 +100,7 @@ connectivity-tools/
 │   └── report/                # json/csv/html (plotly)/junit
 ├── profiles/                  # bt_rfcomm_throughput.yaml, wifi_udp_sweep.yaml, mfi_cp_stress.yaml
 ├── packaging/yocto/meta-ctt/            # recipes-connectivity/ctt-agent/ctt-agent_git.bb
-├── scripts/                   # setup-wsl.sh, usbipd-attach.ps1, build-dut.sh
+├── scripts/                   # setup-wsl.sh, usbipd-attach.ps1, build.sh
 └── docs/                      # PLAN.md, ctp-spec.md, wsl-setup.md
 ```
 

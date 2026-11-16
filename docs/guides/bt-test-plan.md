@@ -1,7 +1,7 @@
 # Test plan Bluetooth: board ↔ PC
 
 > Phạm vi: kết nối Bluetooth Classic (RFCOMM) giữa board Linux và PC: pairing, kết nối, gửi/nhận dữ liệu, throughput, latency, độ ổn định.
-> Công cụ: `ctt-agent.exe` / `ctt-agent-console.exe` trên PC, `ctt-agent` trên board ([bt-app.md](bt-app.md)). Test case chi tiết: [bt-test-cases.md](bt-test-cases.md).
+> Công cụ: `ctt-agent-UI.exe` / `ctt-agent.exe` trên PC, `ctt-agent` trên board ([bt-app.md](bt-app.md)). Test case chi tiết: [bt-test-cases.md](bt-test-cases.md).
 
 ## 1. Hiện trạng: hai setup
 
@@ -13,7 +13,7 @@
 | Bluetooth phía PC | USB dongle trên Local PC | USB dongle trên Client PC |
 | Điều khiển board | **SSH qua LAN** | **Chỉ UART** (không có mạng) |
 | Người test ngồi ở | Local PC | Local PC, **SSH vào Client PC** |
-| App dùng | `ctt-agent.exe` (GUI) hoặc console | `ctt-agent-console.exe` (chạy qua SSH, không có cửa sổ) |
+| App dùng | `ctt-agent-UI.exe` (GUI) hoặc console | `ctt-agent.exe` (chạy qua SSH, không có cửa sổ) |
 | Kết quả phản ánh | Tool, phương pháp, phần mềm BlueZ/agent | **Sản phẩm thật** (chip, anten, firmware) |
 
 Hai điểm khác biệt quyết định cách test:
@@ -35,8 +35,8 @@ Hai điểm khác biệt quyết định cách test:
 ## 3. Chiến lược theo giai đoạn
 
 ### Giai đoạn 0: Tool sẵn sàng (không cần phần cứng)
-- `scripts/build-host.sh` (unit + loopback test) và `scripts/ctt selftest`: PASS.
-- GitHub Actions build được `ctt-agent.exe`, `ctt-agent-console.exe` và agent aarch64.
+- `scripts/build.sh linux` (unit + loopback test) và `scripts/ctt selftest`: PASS.
+- GitHub Actions build được `ctt-agent-UI.exe`, `ctt-agent.exe` và agent aarch64.
 
 **Điều kiện qua:** toàn bộ test PASS, có đủ 3 file binary.
 
@@ -46,7 +46,7 @@ Hai điểm khác biệt quyết định cách test:
    - `btmon` trong lúc đo, ghi lại: loại gói ACL (2-DH5/3-DH5 hay DH1/DM1), RFCOMM frame size (PN), credit, `Mode Change` (sniff);
    - `hciconfig hci0` trên board: ACL MTU, packet type.
 2. **Chạy đủ bộ test case** TC-01 … TC-19 ([bt-test-cases.md](bt-test-cases.md)) bằng GUI. Lặp lại một lượt bằng console để chứng minh hai app cho cùng kết quả.
-3. **So sánh phía PC**: đo cùng dongle trên Windows (`ctt-agent.exe`) và trên Linux native (`scripts/ctt-app`, hoặc `ctt run -t rfcomm`). Nếu Linux nhanh hơn rõ rệt thì giới hạn nằm ở stack Windows, không phải ở board.
+3. **So sánh phía PC**: đo cùng dongle trên Windows (`ctt-agent-UI.exe`) và trên Linux native (`scripts/ctt-app`, hoặc `ctt run -t rfcomm`). Nếu Linux nhanh hơn rõ rệt thì giới hạn nằm ở stack Windows, không phải ở board.
 4. **Ma trận block size**: 990 / 2048 / 4096 / 8192. Mỗi ô **đo 3 lần × 30 s**, ghi min/avg/max.
 
 **Điều kiện qua:** G1–G3 đạt; có bảng số tham chiếu kèm điều kiện đo; đã giải thích được giới hạn throughput (dựa vào btmon và l2ping).
@@ -55,17 +55,17 @@ Hai điểm khác biệt quyết định cách test:
 | Việc | Cách làm |
 |---|---|
 | Có agent trên board mà không cần mạng | Đưa `ctt-agent` vào image (recipe Yocto, xem [yocto-recipe.md](../project/yocto-recipe.md)) và bật `ctt-agent-bt.service` (channel 22). Tạm thời có thể copy bằng USB stick, hoặc truyền qua UART (`lrzsz`, base64) |
-| Truy cập Client PC | Bật OpenSSH Server trên Client PC; copy `ctt-agent-console.exe` sang; cắm dongle |
+| Truy cập Client PC | Bật OpenSSH Server trên Client PC; copy `ctt-agent.exe` sang; cắm dongle |
 | Truy cập UART | Mở terminal serial (PuTTY / `screen /dev/ttyUSB0 115200`) tới board, đăng nhập root |
 | Thủ tục pairing phía board | `bluetoothctl` (agent, pairable, discoverable), hoặc công cụ của daemon BT riêng của board, khai báo trong board profile (xem [bt-app.md](bt-app.md#chuẩn-bị-board-khi-không-có-ssh)) |
 
-**Điều kiện qua:** từ Local PC, SSH vào Client PC chạy được `ctt-agent-console.exe --version`; trên UART, `ctt-agent version` chạy được.
+**Điều kiện qua:** từ Local PC, SSH vào Client PC chạy được `ctt-agent.exe --version`; trên UART, `ctt-agent version` chạy được.
 
 ### Giai đoạn 3: Client Test (số của sản phẩm)
 Hướng dẫn từng bước: [bt-client-test.md](bt-client-test.md).
 
-- Chạy lại bộ test case ở chế độ **No SSH** bằng `ctt-agent-console.exe`. Cột "CT" trong [bt-test-cases.md](bt-test-cases.md) ghi rõ phần nào làm thủ công trên UART.
-- Đo có ngưỡng: `ctt-agent-console suite --addr <ADDR> --channel 22 -l target` (BT-TP-01…06, tự lưu JSON + CSV), cộng log UART và `btmon` của board.
+- Chạy lại bộ test case ở chế độ **No SSH** bằng `ctt-agent.exe`. Cột "CT" trong [bt-test-cases.md](bt-test-cases.md) ghi rõ phần nào làm thủ công trên UART.
+- Đo có ngưỡng: `ctt-agent suite --addr <ADDR> --channel 22 -l target` (BT-TP-01…06, tự lưu JSON + CSV), cộng log UART và `btmon` của board.
 
 **Điều kiện qua:** `suite -l target` báo `6/6 PASS`, và đạt các tiêu chí khác ở mục 5.
 
@@ -74,7 +74,7 @@ Với mỗi build firmware mới, chạy lại: TC-05 (pair), `suite -l baseline
 
 ## 4. Ma trận: test case × setup × app
 
-Test case chi tiết viết cho Client Test với 2 tổ hợp: **A** = board UART + `ctt-agent-console.exe` qua SSH, **B** = board UART + `ctt-agent.exe` (GUI). Xem [bt-test-cases.md](bt-test-cases.md).
+Test case chi tiết viết cho Client Test với 2 tổ hợp: **A** = board UART + `ctt-agent.exe` qua SSH, **B** = board UART + `ctt-agent-UI.exe` (GUI). Xem [bt-test-cases.md](bt-test-cases.md).
 
 | Nhóm | Test case | CT-A (UART + console) | CT-B (UART + GUI) | LT (SSH tới board) |
 |---|---|:-:|:-:|:-:|

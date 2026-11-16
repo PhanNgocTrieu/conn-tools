@@ -7,48 +7,44 @@ on:
   pull_request:
   workflow_dispatch:
 
+# One program, ctt-agent, in one folder per platform (same layout as scripts/build.sh):
+#   ctt-agent-aarch/ctt-agent        every aarch64 board (static)
+#   ctt-agent-linux/ctt-agent        Linux / WSL x86_64 (static)
+#   ctt-agent-window/ctt-agent.exe   Windows console;  ctt-agent-UI.exe  Windows desktop window
 jobs:
-  agent-aarch64:
-    name: ctt-agent for the board (Linux aarch64, static)
+  aarch:
+    name: ctt-agent-aarch (aarch64 boards, static)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y g++-aarch64-linux-gnu cmake ninja-build
-      - run: scripts/build-dut.sh --generic --static --strip
-      - run: file build/dut/agent/ctt-agent
+      - run: sudo apt-get update && sudo apt-get install -y g++-aarch64-linux-gnu cmake
+      - run: scripts/build.sh aarch
       - uses: actions/upload-artifact@v4
         with:
-          name: ctt-agent-aarch64
-          path: build/dut/agent/ctt-agent
+          name: ctt-agent-aarch
+          path: build/ctt-agent-aarch/ctt-agent
 
-  linux-tests:
-    name: host build + all tests (Linux)
+  linux:
+    name: ctt-agent-linux (x86_64, static) + all tests
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      # dbus + python3-dbus + python3-gi: BLE GATT test with a fake BlueZ (app/tests/test_ble_links.py)
-      - run: sudo apt-get update && sudo apt-get install -y cmake ninja-build python3-yaml python3-tk xvfb dbus python3-dbus python3-gi
-      - run: scripts/build-host.sh
-      - name: Release binary for Linux / WSL (x86_64, static, stripped)
-        run: |
-          cmake -S . -B build/rel -DCTT_BUILD_TESTS=OFF -DCTT_STATIC=ON
-          cmake --build build/rel -j"$(nproc)"
-          strip build/rel/agent/ctt-agent
-          file build/rel/agent/ctt-agent
-          build/rel/agent/ctt-agent version
+      # dbus + python3-dbus + python3-gi: BLE GATT test with a fake BlueZ (window-app/tests/test_ble_links.py)
+      - run: sudo apt-get update && sudo apt-get install -y cmake python3-yaml python3-tk xvfb dbus python3-dbus python3-gi
+      - run: scripts/build.sh linux
       - uses: actions/upload-artifact@v4
         with:
-          name: ctt-agent-x86_64
-          path: build/rel/agent/ctt-agent
+          name: ctt-agent-linux
+          path: build/ctt-agent-linux/ctt-agent
       - name: GUI smoke test (Xvfb)
         run: CTT_BT_SMOKE=1 xvfb-run -a scripts/ctt-app
 
-  windows-exe:
-    name: ctt-agent.exe + ctt-agent-console.exe (Windows)
-    needs: agent-aarch64
+  window:
+    name: ctt-agent-window (ctt-agent.exe + ctt-agent-UI.exe)
+    needs: aarch
     runs-on: windows-latest
     env:
-      PYTHONPATH: ${{ github.workspace }}/app/src
+      PYTHONPATH: ${{ github.workspace }}/window-app/src
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -56,70 +52,64 @@ jobs:
           python-version: "3.12"
       - uses: actions/download-artifact@v4
         with:
-          name: ctt-agent-aarch64
-          path: build/stage
-      - run: python -m pip install --upgrade pip pyinstaller pillow -r app/requirements.txt
+          name: ctt-agent-aarch
+          path: build/.work/stage
+      - run: python -m pip install --upgrade pip pyinstaller pillow -r window-app/requirements.txt
       - name: Windows Bluetooth API probe
         run: |
           python -c "import socket; assert hasattr(socket, 'AF_BLUETOOTH') and hasattr(socket, 'BTPROTO_RFCOMM'), 'no RFCOMM sockets'; print('RFCOMM socket support OK')"
           python -c "from winrt.windows.devices.bluetooth import BluetoothDevice; from winrt.windows.devices.enumeration import DeviceInformation, DevicePairingKinds; print('selector', BluetoothDevice.get_device_selector_from_pairing_state(False)[:80]); print('pairing kinds', DevicePairingKinds.CONFIRM_ONLY | DevicePairingKinds.CONFIRM_PIN_MATCH)"
       - name: Unit tests that run on Windows
-        working-directory: app/tests
+        working-directory: window-app/tests
         run: python -m unittest test_btapp.BoardHelpersTest test_btapp.CtpClientTest.test_pattern_crc test_btapp_service.SettingsTest test_btapp_service.ConsoleMenuTest test_btapp_expectations test_btapp_trace.FormatTest test_ble_links.CapabilityTest -v
       - name: GUI smoke test (window + screenshot)
         env:
           CTT_BT_SMOKE: smoke.png
         run: python -m ctt.btapp
-      - name: Build exes (GUI + console)
+      - name: Build ctt-agent.exe + ctt-agent-UI.exe
         shell: pwsh
-        run: .\scripts\build-btapp.ps1 -Agent build\stage\ctt-agent -SkipInstall -OutDir output\windows
-      - name: Console exe smoke test
+        run: window-app\build.ps1 -Agent build\.work\stage\ctt-agent -SkipInstall
+      - name: ctt-agent.exe smoke test
         shell: pwsh
         run: |
-          output\windows\ctt-agent-console.exe --version
+          build\ctt-agent-window\ctt-agent.exe --version
           if ($LASTEXITCODE -ne 0) { throw "--version failed" }
-          output\windows\ctt-agent-console.exe run --help
-          output\windows\ctt-agent-console.exe suite --list -l target
+          build\ctt-agent-window\ctt-agent.exe run --help
+          build\ctt-agent-window\ctt-agent.exe suite --list -l target
           if ($LASTEXITCODE -ne 0) { throw "suite --list failed" }
           # menu: piped output must be UTF-8 English text, then exit with 0
-          $menu = "0" | output\windows\ctt-agent-console.exe
+          $menu = "0" | build\ctt-agent-window\ctt-agent.exe
           $menu | Out-String | Write-Host
           if (-not ($menu -match "Test suite")) { throw "console menu not shown" }
           # links: Windows runs RFCOMM and BLE GATT, BLE CoC is reported as not available
-          $caps = output\windows\ctt-agent-console.exe caps | Out-String
+          $caps = build\ctt-agent-window\ctt-agent.exe caps | Out-String
           Write-Host $caps
           if (-not ($caps -match "ble-gatt\s+yes")) { throw "BLE GATT (bleak) not available in the exe" }
           if (-not ($caps -match "ble-coc\s+no")) { throw "BLE CoC should be reported as not available on Windows" }
-      - name: Exe smoke test
+      - name: ctt-agent-UI.exe smoke test
         shell: pwsh
         run: |
           $env:CTT_BT_SMOKE = "1"
-          $p = Start-Process output\windows\ctt-agent.exe -PassThru -Wait
-          if ($p.ExitCode -ne 0) { throw "ctt-agent.exe exited with $($p.ExitCode)" }
-          Get-Item output\windows\ctt-agent.exe | Select-Object Name, Length
+          $p = Start-Process build\ctt-agent-window\ctt-agent-UI.exe -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "ctt-agent-UI.exe exited with $($p.ExitCode)" }
+          Get-ChildItem build\ctt-agent-window | Select-Object Name, Length
       - uses: actions/upload-artifact@v4
         with:
-          name: ctt-agent-windows
+          name: ctt-agent-window
           path: |
-            output/windows/ctt-agent.exe
-            output/windows/ctt-agent-console.exe
-            smoke.png
+            build/ctt-agent-window/ctt-agent.exe
+            build/ctt-agent-window/ctt-agent-UI.exe
       - uses: actions/upload-artifact@v4
         with:
-          name: ctt-agent-console-windows
-          path: output/windows/ctt-agent-console.exe
+          name: gui-screenshot
+          path: smoke.png
 
-  # Deploy: every push to main refreshes the "latest-main" pre-release; a v* tag makes a release.
-  # Assets (names must differ, so the Linux binaries carry the CPU in the name):
-  #   ctt-agent-aarch64      board agent (Linux aarch64, static)
-  #   ctt-agent-x86_64       Linux / WSL agent (static)
-  #   ctt-agent.exe          Windows desktop app (GUI)
-  #   ctt-agent-console.exe  Windows console app (menu + sub-commands, works over SSH)
-  #   SHA256SUMS
-  # GitHub adds "Source code (zip / tar.gz)" to every release by itself.
+  # Every push to main refreshes the "latest-main" pre-release; a v* tag makes a release.
+  # Assets: ctt-agent-aarch.tar.gz, ctt-agent-linux.tar.gz, ctt-agent-window.zip, SHA256SUMS
+  # (each archive holds its ctt-agent-<platform>/ folder). GitHub adds the source code itself.
   release:
     name: publish release (main -> latest-main, tags -> vX.Y.Z)
-    needs: [agent-aarch64, linux-tests, windows-exe]
+    needs: [aarch, linux, window]
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     permissions:
@@ -133,38 +123,35 @@ jobs:
         run: scripts/version.sh check "${GITHUB_REF_NAME#v}"
       - uses: actions/download-artifact@v4
         with:
-          name: ctt-agent-windows
-          path: out/windows
+          name: ctt-agent-aarch
+          path: pkg/ctt-agent-aarch
       - uses: actions/download-artifact@v4
         with:
-          name: ctt-agent-aarch64
-          path: out/aarch64
+          name: ctt-agent-linux
+          path: pkg/ctt-agent-linux
       - uses: actions/download-artifact@v4
         with:
-          name: ctt-agent-x86_64
-          path: out/x86_64
+          name: ctt-agent-window
+          path: pkg/ctt-agent-window
       - name: Collect assets
         run: |
-          # artifact layout keeps the common parent folder (output/windows/ next to smoke.png): find by name
-          find out -type f | sort
+          find pkg -type f | sort
+          chmod +x pkg/ctt-agent-aarch/ctt-agent pkg/ctt-agent-linux/ctt-agent
           mkdir -p assets
-          for f in ctt-agent-console.exe ctt-agent.exe; do
-            cp "$(find out/windows -type f -name "$f" | head -1)" assets/
-          done
-          cp "$(find out/aarch64 -type f -name ctt-agent | head -1)" assets/ctt-agent-aarch64
-          cp "$(find out/x86_64 -type f -name ctt-agent | head -1)" assets/ctt-agent-x86_64
-          chmod +x assets/ctt-agent-aarch64 assets/ctt-agent-x86_64
-          ls -la assets
+          (cd pkg && tar czf ../assets/ctt-agent-aarch.tar.gz ctt-agent-aarch \
+                   && tar czf ../assets/ctt-agent-linux.tar.gz ctt-agent-linux \
+                   && zip -r ../assets/ctt-agent-window.zip ctt-agent-window)
           cd assets && sha256sum * > SHA256SUMS && cat SHA256SUMS
       - name: Release notes header
         run: |
           cat > notes.md <<EOF
-          | File | Runs on |
-          |---|---|
-          | \`ctt-agent-aarch64\` | board, Linux aarch64 (copy to \`/tmp/ctt-agent\`, \`chmod +x\`) |
-          | \`ctt-agent-x86_64\` | Linux / WSL x86_64 |
-          | \`ctt-agent.exe\` | Windows, desktop app |
-          | \`ctt-agent-console.exe\` | Windows, console (also over SSH) |
+          One program, \`ctt-agent\`, one package per platform:
+
+          | Package | Contains | Runs on |
+          |---|---|---|
+          | \`ctt-agent-aarch.tar.gz\` | \`ctt-agent\` | every aarch64 board (copy to \`/tmp/ctt-agent\`, \`chmod +x\`) |
+          | \`ctt-agent-linux.tar.gz\` | \`ctt-agent\` | Linux / WSL x86_64 |
+          | \`ctt-agent-window.zip\` | \`ctt-agent.exe\`, \`ctt-agent-UI.exe\` | Windows: console (also over SSH), desktop window |
 
           Built from ${GITHUB_SHA}. Check the downloads with \`sha256sum -c SHA256SUMS\`.
           EOF

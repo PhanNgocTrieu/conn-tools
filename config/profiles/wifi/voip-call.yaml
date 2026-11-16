@@ -1,0 +1,41 @@
+# Voice / video calls over WiFi (VoIP, video conferencing) - traffic model
+#
+# RTP over UDP, both directions at once, constant small packets. Loss, jitter and the
+# longest gap decide call quality; ITU-T G.114 recommends <= 150 ms one way, i.e. a round
+# trip below ~300 ms; on a local WiFi link far less is expected.
+#
+#   tx = PC -> board,  rx = board -> PC.  Run with --target-addr <board-wlan-ip> if needed.
+name: wifi-voip-call
+defaults:
+  transport: udp
+  duration: 60s
+  protocol: VoIP / RTP
+  wifi_iface: auto
+  expect: {loss_pct_max: 1, jitter_us_max: 30000, burst_on_time_pct_min: 99, burst_max_gap_ms_max: 60}
+
+tests:
+  - name: g711-narrowband
+    notes: G.711 64 kbit/s, 20 ms packets = 160 B payload, both ways
+    mode: bidir
+    block: 160
+    burst: 160
+    burst_rate: 50
+  - name: wideband-opus
+    notes: wideband voice ~32 kbit/s, 20 ms packets = 80 B
+    mode: bidir
+    block: 80
+    burst: 80
+    burst_rate: 50
+  - name: video-call-720p
+    notes: 720p30 video ~1.5 Mbit/s each way = ~6.25 KB per frame
+    mode: bidir
+    block: 1200
+    burst: 6250
+    burst_rate: 30
+    expect: {loss_pct_max: 2, burst_on_time_pct_min: 98, burst_max_gap_ms_max: 150}
+  - name: call-latency
+    notes: round trip of 160-byte packets every 20 ms
+    mode: echo
+    block: 160
+    echo_interval_ms: 20
+    expect: {echo_loss_pct_max: 1, rtt_p99_us_max: 100000}

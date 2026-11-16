@@ -1,0 +1,43 @@
+# USB networking (CDC-NCM / ECM / RNDIS) - IP over USB
+#
+# Used by CarPlay wired, tethering and debug links. Data is plain TCP / UDP on the usb0
+# interface, so several streams can run at once.
+#
+# Setup: ctt usb gadget up --ncm --dut root@<board>   (give usb0 an IP on both ends)
+# Run:   ctt profile config/profiles/usb/ncm-network.yaml --dut root@<board> --target-addr <board-usb0-ip>
+#   tx = PC -> board,  rx = board -> PC
+name: usb-ncm-network
+defaults:
+  transport: tcp
+  duration: 20s
+  protocol: USB CDC-NCM
+  sndbuf: 1M
+  rcvbuf: 1M
+  expect: {lost_max: 0}
+
+tests:
+  - name: tcp-up
+    mode: tx
+    expect: {up_mbps_min: 150}
+  - name: tcp-down
+    mode: rx
+    expect: {down_mbps_min: 150}
+  - name: tcp-bidir
+    mode: bidir
+  - name: tcp-4-streams
+    notes: four parallel downloads (tethering / file sync)
+    parallel:
+      - {name: s1, mode: rx}
+      - {name: s2, mode: rx}
+      - {name: s3, mode: rx}
+      - {name: s4, mode: rx}
+  - name: udp-load-200M
+    transport: udp
+    mode: tx
+    block: 1400
+    rate: 200M
+    expect: {loss_pct_max: 0.5}
+  - name: latency
+    mode: echo
+    duration: 10s
+    expect: {rtt_p99_us_max: 2000}

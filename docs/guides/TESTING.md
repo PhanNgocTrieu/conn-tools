@@ -38,7 +38,7 @@ Mỗi test case có mã (`WIFI-03`, `BT-05`, ...) để ghi vào báo cáo hoặ
 cd ~/connectivity-tools
 scripts/dev/setup-wsl.sh --install      # cần sudo; nếu script vừa bật systemd: chạy `wsl --shutdown` rồi mở lại WSL
 scripts/dev/setup-wsl.sh                # chạy lại: không còn dòng [fail]
-scripts/build-host.sh               # build + chạy toàn bộ test của tool
+scripts/build.sh linux               # build + chạy toàn bộ test của tool
 ```
 
 Gắn BT dongle vào WSL (PowerShell trên Windows, lần đầu chạy bằng quyền Admin):
@@ -52,18 +52,24 @@ Gắn BT dongle vào WSL (PowerShell trên Windows, lần đầu chạy bằng q
 
 ```bash
 # Ưu tiên: dùng Yocto SDK của image (bitbake <image> -c populate_sdk)
-scripts/build-dut.sh --sdk /opt/<board-sdk>/environment-setup-aarch64-...
+scripts/build.sh aarch --sdk /opt/<board-sdk>/environment-setup-aarch64-...
 # Nếu chưa có SDK: build tĩnh bằng cross gcc của Ubuntu (khoảng 2.3 MB khi --strip)
-scripts/build-dut.sh --generic --static --strip
+scripts/build.sh aarch
 # Hoặc đưa vào image: packaging/yocto/meta-ctt (khi đó dùng --dut-agent /usr/bin/ctt-agent)
 ```
 
 ### 0.4 Biến môi trường dùng trong tài liệu
 
 ```bash
-export CTT_DUT=root@<ip-ethernet-của-DUT>    # khỏi phải gõ --dut ở mỗi lệnh
 alias ctt="$PWD/scripts/ctt"
+ctt setup      # hỏi một lần: địa chỉ SSH của board, IP usb0 / wlan0 -> ~/.config/ctt/settings.yaml
+ctt check      # kiểm tra agent trên PC, SSH, version agent trên board, ping IP dữ liệu
 ```
+
+Sau `ctt setup` không cần gõ `--dut` nữa (thứ tự ưu tiên: option trên dòng lệnh > `$CTT_DUT` > file
+settings). Cách dễ nhất: gõ `ctt` không tham số để mở menu, hoặc `ctt test` để xem danh mục và
+`ctt test <tên>` để chạy (test `wifi/` tự dùng `wifi_addr`, test `usb/` dùng `usb_addr`).
+Các lệnh đầy đủ bên dưới (`ctt run`, `ctt profile`, ...) vẫn dùng được như cũ.
 
 ---
 
@@ -71,7 +77,7 @@ alias ctt="$PWD/scripts/ctt"
 
 | ID | Mục đích | Lệnh | Pass khi |
 |---|---|---|---|
-| **SYS-01** | Toàn bộ unit test và integration test | `cd build/host && ctest --output-on-failure` | `100% tests passed` |
+| **SYS-01** | Toàn bộ unit test và integration test | `scripts/build.sh linux` (chạy CTest) | `100% tests passed` |
 | **SYS-02** | Các mode tx/rx/bidir/echo qua loopback | `ctt selftest` | `4/4 passed`, LOST = 0, CRC = 0 |
 | **SYS-03** | Đường đi dạng gói (giống L2CAP) | `ctt run --dut local -t unix -o type=seqpacket -o mtu=672 -m bidir -b 990 -d 5s` | PASS, lost = 0, crc_err = 0 |
 
@@ -113,10 +119,10 @@ WIFI=<ip-wifi-của-DUT>
 | **WIFI-04** | Độ trễ khứ hồi | `ctt run -e $WIFI:5201 -m echo -d 20s --expect rtt_p99_us_max=<Y>` | p99 ≤ Y |
 | **WIFI-05** | Ảnh hưởng của kích thước ghi | `ctt profile config/profiles/tcp_smoke.yaml` (test `block-sweep`, có thể thêm `-e`) | Không lỗi. Ghi đường cong throughput theo block |
 | **WIFI-06** | Soak (độ ổn định lâu dài) | `ctt run -e $WIFI:5201 -m bidir -d 1h -i 10s --name wifi-soak` | Không ERROR. Throughput trong `intervals.csv` không tụt về 0 |
-| **WIFI-07** | Bộ test chuẩn TCP | `ctt profile config/profiles/wifi_tcp_throughput.yaml` (sửa ngưỡng `expect` trước) | Mọi test PASS |
+| **WIFI-07** | Bộ test chuẩn TCP | `ctt profile config/profiles/wifi/tcp-baseline.yaml` (sửa ngưỡng `expect` trước) | Mọi test PASS |
 | **WIFI-08** | UDP: mất gói và jitter ở tải cố định | `ctt run -t udp -e $WIFI:5201 -m tx -r 50M -d 30s --wifi --expect loss_pct_max=1` | loss ≤ 1%. Ghi lại jitter |
-| **WIFI-09** | UDP: tìm mức tải bắt đầu mất gói | `ctt profile config/profiles/wifi_udp.yaml --only load` | Mức tải cao nhất mà loss vẫn ≤ ngưỡng (đọc trong `summary.csv`) |
-| **WIFI-10** | Luồng kiểu VoIP (gói nhỏ, tốc độ thấp) | `ctt profile config/profiles/wifi_udp.yaml --only voip` | loss ≤ 0.5%, jitter ≤ 3 ms |
+| **WIFI-09** | UDP: tìm mức tải bắt đầu mất gói | `ctt profile config/profiles/wifi/udp-load.yaml --only load` | Mức tải cao nhất mà loss vẫn ≤ ngưỡng (đọc trong `summary.csv`) |
+| **WIFI-10** | Luồng kiểu VoIP (gói nhỏ, tốc độ thấp) | `ctt profile config/profiles/wifi/udp-load.yaml --only voip` | loss ≤ 0.5%, jitter ≤ 3 ms |
 | **WIFI-11** | RTT qua UDP, có đếm request bị mất | `ctt run -t udp -e $WIFI:5201 -m echo --echo-interval 20 -d 30s --expect echo_loss_pct_max=1` | echo loss ≤ 1% |
 
 **Thông tin link:** thêm `--wifi` (hoặc `wifi_iface: auto` trong profile). Tool sẽ đọc `iw dev <if> link` trên DUT trước và sau mỗi test, rồi đưa signal (dBm), tx/rx bitrate và tần số vào report (`wifi_*` trong summary). Có thể đặt điều kiện `--expect wifi_signal_dbm_min=-65` để loại các lần đo khi sóng yếu.
@@ -161,10 +167,10 @@ Agent chạy làm server trên DUT. Channel RFCOMM do kernel của DUT tự cấ
 | **BT-11** | RFCOMM DUT → host | `ctt run -t rfcomm -m rx -d 30s --expect down_mbps_min=<X>` | down ≥ X |
 | **BT-12** | RFCOMM full-duplex | `ctt run -t rfcomm -m bidir -d 30s` | Không lỗi. Ghi lại tổng throughput |
 | **BT-13** | Độ trễ RFCOMM | `ctt run -t rfcomm -m echo -b 64 --echo-interval 20 -d 10s` | p99 ≤ yêu cầu |
-| **BT-14** | Kích thước ghi và mức security | `ctt profile config/profiles/bt_rfcomm_throughput.yaml --only block --only security` | Không lỗi. So sánh throughput giữa các mức `low` / `medium` / `high` |
+| **BT-14** | Kích thước ghi và mức security | `ctt profile config/profiles/bluetooth/rfcomm-throughput.yaml --only block --only security` | Không lỗi. So sánh throughput giữa các mức `low` / `medium` / `high` |
 | **BT-15** | L2CAP BR/EDR | `ctt run -t l2cap -o type=bredr -o imtu=1691 -m tx -d 30s` | PASS. Thường cao hơn RFCOMM một chút |
 | **BT-16** | Soak RFCOMM | `ctt run -t rfcomm -m bidir -d 1h -i 10s --timeout 30s --name bt-soak` | Không ERROR (không rớt link) |
-| **BT-17** | Bộ test chuẩn | `ctt profile config/profiles/bt_rfcomm_throughput.yaml` (sửa ngưỡng trước) | Mọi test PASS |
+| **BT-17** | Bộ test chuẩn | `ctt profile config/profiles/bluetooth/rfcomm-throughput.yaml` (sửa ngưỡng trước) | Mọi test PASS |
 
 **Mốc tham khảo:**
 - BR/EDR EDR 3 Mbps: RFCOMM goodput thực tế khoảng **2.0–2.2 Mbps**.
@@ -217,7 +223,7 @@ Xem [usb.md](usb.md) để biết chi tiết. Trước hết cần xác định 
 | **USB-01** | Vai trò cổng và các UDC | `ctt usb gadget status` | Biết được cổng là host, device hay OTG |
 | **USB-02** | Dựng gadget (nếu là device) | `ctt usb gadget up`, rồi attach `1d6b:0104` vào WSL bằng usbipd | `ctt usb list --side host` thấy `1d6b:0104` |
 | **USB-03** | Bulk host → DUT / DUT → host | `ctt run -t usb -m tx -d 20s` và `-m rx` | Đạt ngưỡng, lost = 0, crc = 0. `link.usb_speed` đúng (high / super) |
-| **USB-04** | Bulk 2 chiều, RTT, block size | `ctt profile config/profiles/usb_bulk.yaml` | Mọi test PASS |
+| **USB-04** | Bulk 2 chiều, RTT, block size | `ctt profile config/profiles/usb/bulk-raw.yaml` | Mọi test PASS |
 | **USB-05** | Mạng qua USB (NCM) | `ctt usb gadget up --ncm`, rồi `ctt run -t tcp -e <ip-usb0>:5201 -m bidir` | PASS |
 | **USB-06** | Thiết bị cắm vào DUT (nếu là host) | `ctt usb list` | Thấy thiết bị với tốc độ đúng (480M / 5000M) |
 | **USB-07** | Throughput USB storage | `ctt usb storage --path <mount>/ctt.bin --size 512M --expect write_MBps_min=X --expect read_MBps_min=Y` | Đạt ngưỡng, `verify_errors` = 0 |
@@ -226,9 +232,31 @@ Xem [usb.md](usb.md) để biết chi tiết. Trước hết cần xác định 
 
 ---
 
+## C5. Throughput theo giao thức (USB, WiFi)
+
+Mỗi giao thức là một profile trong `config/profiles/usb/` hoặc `config/profiles/wifi/`. Profile mô phỏng tải và nhịp gửi của giao thức thật (mô hình burst, nhiều luồng song song). Ý nghĩa và con số mặc định: [protocols.md](protocols.md). Thêm `-d 10s` khi chỉ muốn chạy thử nhanh.
+
+| Mã | Giao thức | Lệnh | Đạt khi |
+|---|---|---|---|
+| **PROTO-USB-01** | CarPlay có dây (NCM) | `ctt profile config/profiles/usb/carplay-wired.yaml --target-addr <ip-usb0>` | Mọi luồng PASS: video đúng hạn ≥ 99 %, audio ≥ 99,5 %, điều khiển p99 ≤ 20 ms |
+| **PROTO-USB-02** | Android Auto có dây (bulk) | `ctt profile config/profiles/usb/androidauto-wired.yaml` | Mọi kênh PASS, dung lượng ≥ 50 Mbit/s mỗi chiều |
+| **PROTO-USB-03** | USB Audio (UAC) | `ctt profile config/profiles/usb/uac-audio.yaml` | Đúng hạn ≥ 99,9 %, khoảng trống ≤ 3 ms |
+| **PROTO-USB-04** | USB Video (UVC) | `ctt profile config/profiles/usb/uvc-video.yaml` | Khung đúng hạn ≥ 99 % (YUY2 720p30 chỉ đạt trên SuperSpeed) |
+| **PROTO-USB-05** | MSC/MTP, CDC-ACM, HID | `ctt profile config/profiles/usb/usb-classes.yaml` | Mọi test PASS |
+| **PROTO-USB-06** | Mạng qua USB (NCM) | `ctt profile config/profiles/usb/ncm-network.yaml --target-addr <ip-usb0>` | Mọi test PASS |
+| **PROTO-WIFI-01** | CarPlay không dây | `ctt profile config/profiles/wifi/carplay-wireless.yaml --target-addr <ip-wlan>` | Mọi luồng PASS |
+| **PROTO-WIFI-02** | Android Auto không dây | `ctt profile config/profiles/wifi/androidauto-wireless.yaml --target-addr <ip-wlan>` | Mọi luồng PASS |
+| **PROTO-WIFI-03** | Miracast | `ctt profile config/profiles/wifi/miracast.yaml --target-addr <ip-p2p>` | Mất ≤ 1 %, khung đúng hạn ≥ 98 % |
+| **PROTO-WIFI-04** | VoIP / gọi video | `ctt profile config/profiles/wifi/voip-call.yaml` | Mất ≤ 1 %, jitter ≤ 30 ms, RTT p99 ≤ 100 ms |
+| **PROTO-WIFI-05** | Streaming audio/video | `ctt profile config/profiles/wifi/media-streaming.yaml` | Mọi segment đúng hạn (không rebuffer) |
+| **PROTO-WIFI-06** | Truyền file | `ctt profile config/profiles/wifi/file-transfer.yaml` | Đạt ngưỡng Mbit/s của sản phẩm |
+| **PROTO-WIFI-07** | Tương tác thời gian thực | `ctt profile config/profiles/wifi/interactive-latency.yaml` | RTT p99 trong ngưỡng, mất ≤ 1 % |
+
+Ghi lại cùng kết quả: signal WiFi (`--wifi` / `wifi_iface`), tốc độ USB đàm phán (`ctt usb list`), và cột `ON TIME %` của bảng tổng kết.
+
 ## D. Đọc kết quả
 
-Mỗi lần chạy tạo một thư mục `output/reports/<thời-gian>_<tên>/`:
+Mỗi lần chạy tạo một thư mục `build/reports/<thời-gian>_<tên>/`:
 
 ```
 report.html                       mở bằng trình duyệt: bảng tổng hợp, biểu đồ throughput theo thời gian, chi tiết check
@@ -259,12 +287,12 @@ Exit code của `ctt` bằng 0 khi mọi test PASS, nên dùng trực tiếp đ�
 **So sánh với baseline (regression):** giữ lại thư mục của một lần chạy "chuẩn" (ví dụ image release trước). Với mỗi image mới, chạy cùng profile rồi so sánh:
 
 ```bash
-ctt compare output/reports/<baseline-run> output/reports/<new-run> --tolerance 10
+ctt compare build/reports/<baseline-run> build/reports/<new-run> --tolerance 10
 ```
 
 Lệnh này báo các metric xấu đi quá 10% (throughput giảm; RTT, loss hoặc jitter tăng), các counter đáng lẽ bằng 0 (`lost`, `crc_errors`) mà tăng, và các test từ PASS chuyển sang không PASS. Exit code là 1 nếu có regression.
 
-Tạo lại `report.html` / `junit.xml` cho một thư mục cũ: `ctt report output/reports/<run>`.
+Tạo lại `report.html` / `junit.xml` cho một thư mục cũ: `ctt report build/reports/<run>`.
 
 ---
 
@@ -272,7 +300,7 @@ Tạo lại `report.html` / `junit.xml` cho một thư mục cũ: `ctt report ou
 
 Khi một test FAIL hoặc ERROR, đính kèm:
 
-1. Thư mục `out/...` của lần chạy đó.
+1. Thư mục `build/reports/...` của lần chạy đó.
 2. `dut-info.txt` (DUT-03).
 3. Log kernel trên DUT: `ssh $CTT_DUT dmesg | tail -200`.
 4. Nếu là lỗi Bluetooth: chạy lại kèm bản ghi HCI.

@@ -1,0 +1,53 @@
+# USB Audio Class (UAC 1.0 / 2.0) - traffic model
+#
+# Real USB audio uses isochronous endpoints: one packet per (micro)frame, every 1 ms at full
+# speed. CTT has no isochronous transport; it sends the same bytes per 1 ms period over USB
+# bulk and measures whether every period arrives on time. A late period (> 1.5 ms after the
+# previous one) is what a listener hears as a click / dropout, so on-time % and max gap are
+# the figures to watch.
+#
+# Roles: board = USB audio device (CTT gadget), PC = USB host.
+#   tx = host -> device (playback to the board),  rx = device -> host (capture from the board)
+#
+# Setup: ctt usb gadget up --dut root@<board>
+# Run:   ctt profile config/profiles/usb/uac-audio.yaml --dut root@<board>
+#
+# Bytes per 1 ms = sample_rate * channels * bytes_per_sample / 1000.
+name: usb-audio-class
+defaults:
+  transport: usb
+  duration: 30s
+  protocol: USB Audio Class
+  expect: {lost_max: 0, burst_on_time_pct_min: 99.9, burst_max_gap_ms_max: 3}
+
+tests:
+  - name: playback-48k-16bit-stereo
+    notes: 48 kHz x 2 ch x 2 B = 192 B per ms (1.536 Mbit/s), CD-class playback
+    mode: tx
+    block: 192
+    burst: 192
+    burst_rate: 1000
+  - name: capture-48k-16bit-stereo
+    notes: same format from the device (microphone array, line in)
+    mode: rx
+    block: 192
+    burst: 192
+    burst_rate: 1000
+  - name: playback-96k-24bit-stereo
+    notes: hi-res, 96 kHz x 2 ch x 3 B = 576 B per ms (4.6 Mbit/s), UAC 2.0
+    mode: tx
+    block: 576
+    burst: 576
+    burst_rate: 1000
+  - name: playback-48k-32bit-8ch
+    notes: multichannel (7.1 / TDM), 48 kHz x 8 ch x 4 B = 1536 B per ms (12.3 Mbit/s)
+    mode: tx
+    block: 1536
+    burst: 1536
+    burst_rate: 1000
+  - name: duplex-16k-mono-voice
+    notes: telephony / headset, 16 kHz mono 16-bit = 32 B per ms both ways
+    mode: bidir
+    block: 32
+    burst: 32
+    burst_rate: 1000

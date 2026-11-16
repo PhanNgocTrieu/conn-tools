@@ -1,0 +1,29 @@
+# Bulk data over WiFi (file copy, software update, backup) - maximum throughput
+#
+#   tx = PC -> board,  rx = board -> PC.  Thresholds are placeholders for the product.
+name: wifi-file-transfer
+defaults:
+  transport: tcp
+  duration: 30s
+  sndbuf: 2M
+  rcvbuf: 2M
+  protocol: File transfer (TCP)
+  wifi_iface: auto
+  expect: {lost_max: 0}
+
+tests:
+  - name: upload
+    mode: tx
+    expect: {up_mbps_min: 50}
+  - name: download
+    mode: rx
+    expect: {down_mbps_min: 50}
+  - name: duplex
+    mode: bidir
+  - name: download-4-streams
+    notes: four connections at once (download managers, OTA with parallel ranges)
+    parallel:
+      - {name: s1, mode: rx}
+      - {name: s2, mode: rx}
+      - {name: s3, mode: rx}
+      - {name: s4, mode: rx}

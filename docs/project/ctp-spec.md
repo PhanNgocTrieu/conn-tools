@@ -2,7 +2,7 @@
 
 CTP là giao thức chung giữa hai `ctt-agent`, chạy trên **bất kỳ transport dạng stream tin cậy** nào (TCP, RFCOMM, L2CAP, USB bulk, ...). Mọi chế độ test và metrics đều dùng chung, transport chỉ có nhiệm vụ chuyển byte.
 
-Mã nguồn tham chiếu: [agent/include/ctt/ctp.hpp](../../agent/include/ctt/ctp.hpp), [agent/src/ctp.cpp](../../agent/src/ctp.cpp).
+Mã nguồn tham chiếu: [linux-app/include/ctt/ctp.hpp](../../linux-app/include/ctt/ctp.hpp), [linux-app/src/ctp.cpp](../../linux-app/src/ctp.cpp).
 
 ## 1. Frame
 
@@ -13,7 +13,7 @@ Mọi message đều gồm một header 32 byte theo sau là payload. Tất cả
 | 0 | 4 | `magic` | `0x31505443`, trên dây là chuỗi ASCII `"CTP1"` |
 | 4 | 1 | `version` | `1` |
 | 5 | 1 | `type` | xem mục 2 |
-| 6 | 2 | `flags` | bit0 `CRC`: trường `crc32` hợp lệ |
+| 6 | 2 | `flags` | bit0 `CRC`: trường `crc32` hợp lệ. bit1 `BURST_END`: DATA cuối của một burst (từ v3) |
 | 8 | 4 | `seq` | DATA: bắt đầu từ 0, tăng 1 mỗi frame. ECHO: id của request |
 | 12 | 4 | `payload_len` | ≤ 1 MiB |
 | 16 | 8 | `ts_ns` | monotonic ns **của bên gửi** (chỉ so sánh được trên cùng máy) |
@@ -26,16 +26,16 @@ Bên nhận tách frame theo `payload_len`. Nếu `magic` sai thì stream đã m
 
 | Type | Tên | Hướng | Payload |
 |---:|---|---|---|
-| 1 | `START` | client → server | `StartParams` (32 B) |
+| 1 | `START` | client → server | `StartParams` (40 B; bản cũ 32 B) |
 | 2 | `START_ACK` | server → client | — |
 | 3 | `DATA` | bên gửi → bên nhận | pattern PRBS |
 | 4 | `STOP` | bên gửi → bên nhận | — (`seq` = số frame đã gửi) |
-| 5 | `STATS` | server → client | `StatsPayload` (88 B) |
+| 5 | `STATS` | server → client | `StatsPayload` (128 B; bản cũ 88 / 96 B) |
 | 6 | `ECHO_REQ` | client → server | dữ liệu bất kỳ |
 | 7 | `ECHO_RSP` | server → client | copy nguyên `ECHO_REQ`, gồm cả `seq` và `ts_ns` |
 | 8 | `ERROR` | bất kỳ | chuỗi UTF-8 |
 
-### StartParams (32 B)
+### StartParams (40 B)
 
 | Offset | Size | Field |
 |---:|---:|---|
@@ -47,11 +47,23 @@ Bên nhận tách frame theo `payload_len`. Nếu `magic` sai thì stream đã m
 | 16 | 8 | `rate_bps`: giới hạn tốc độ bên gửi, 0 = không giới hạn |
 | 24 | 4 | `echo_interval_us` |
 | 28 | 4 | `echo_count`: 0 = chạy theo thời gian |
+| 32 | 4 | `burst_bytes`: mô hình burst, số byte mỗi burst (làm tròn lên thành block nguyên); 0 = luồng liên tục |
+| 36 | 4 | `burst_interval_us`: chu kỳ burst |
 
-### StatsPayload (88 B)
+Bên nhận chấp nhận START 32 B của bản cũ: khi đó không có burst.
+
+**Mô hình burst** (v3): tại `t0 + k × burst_interval_us`, bên gửi gửi liền `ceil(burst_bytes / block_size)` frame DATA, frame cuối có flag `BURST_END`. Không dùng chung với `rate_bps`. Bên nhận tính:
+- `count`: số burst hoàn tất;
+- `late`: số burst hoàn tất muộn hơn 1,5 chu kỳ so với burst trước;
+- `max_gap`: khoảng cách lớn nhất giữa hai lần hoàn tất;
+- `jitter`: trung bình của |khoảng cách − chu kỳ|.
+
+Với TCP, cả hai đầu bật `TCP_NODELAY` cho phiên burst.
+
+### StatsPayload (128 B)
 
 `flags u32` (bit0 có rx, bit1 có tx), `reserved u32`, sau đó là 10 trường `u64`:
-`rx_frames, rx_bytes, rx_lost, rx_out_of_order, rx_crc_errors, rx_duration_ns, tx_frames, tx_bytes, tx_duration_ns, echoed`, và cuối cùng là `rx_jitter_ns u64` ở offset 88 (tổng 96 B). Bên nhận vẫn chấp nhận payload 88 B của bản cũ, khi đó jitter = 0.
+`rx_frames, rx_bytes, rx_lost, rx_out_of_order, rx_crc_errors, rx_duration_ns, tx_frames, tx_bytes, tx_duration_ns, echoed`, rồi `rx_jitter_ns u64` ở offset 88, và từ v3 là thống kê burst của server khi nó là bên nhận: `rx_bursts`, `rx_bursts_late`, `rx_burst_max_gap_ns`, `rx_burst_jitter_ns` (u64, offset 96–127). Bên nhận vẫn chấp nhận payload 88 B / 96 B của bản cũ, khi đó các trường thiếu = 0.
 
 ## 3. Luồng session
 

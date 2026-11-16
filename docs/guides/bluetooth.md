@@ -35,7 +35,7 @@ scripts/ctt bt pair --dut root@<dut-ip> --dut-accept
 
 # 3. Throughput
 scripts/ctt run -t rfcomm -m bidir -d 30s --dut root@<dut-ip>
-scripts/ctt profile config/profiles/bt_rfcomm_throughput.yaml --dut root@<dut-ip>
+scripts/ctt profile config/profiles/bluetooth/rfcomm-throughput.yaml --dut root@<dut-ip>
 
 # 4. Độ ổn định của pairing
 scripts/ctt bt pair-stress --dut root@<dut-ip> --dut-accept -n 50 --connect
@@ -60,7 +60,7 @@ ctt-agent client -t rfcomm -e <DUT-addr>/<channel> -m bidir -d 30
 
 ## Đối chiếu với code RFCOMM hiện có của bạn
 
-| Code của bạn | `ctt-agent` (agent/src/transports/rfcomm.cpp) |
+| Code của bạn | `ctt-agent` (linux-app/src/transports/rfcomm.cpp) |
 |---|---|
 | `struct ns_sockaddr_rc` tự định nghĩa | `SockaddrRc` với `static_assert(sizeof == 10)` và `offsetof(rc_channel) == 8`. **Không được pack**, vì `connect()` của kernel yêu cầu `addrlen >= sizeof(struct sockaddr_rc)` = 10 |
 | channel cố định 1 | cấu hình được, hoặc dùng 0 (kernel tự chọn) rồi đọc lại bằng `getsockname()` |
